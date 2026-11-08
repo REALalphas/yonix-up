@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Yonix Documentation</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Yonix</h1>
+            <p class="description">Automated NixOS system management wrapper.</p>
+        </header>
+
+        <section>
+            <h2>Installation</h2>
+            <pre><code>git clone https://github.com/yourusername/yonix.git
+./yonix/yonix</code></pre>
+        </section>
+
+        <section>
+            <h2>Commands</h2>
+            <dl class="command-list">
+                <div class="command-row">
+                    <dt>update</dt>
+                    <dd>Rebuild system configuration.</dd>
+                </div>
+                <div class="command-row">
+                    <dt>upgrade</dt>
+                    <dd>Update flake inputs and rebuild.</dd>
+                </div>
+                <div class="command-row">
+                    <dt>clean</dt>
+                    <dd>Garbage collect and optimize store.</dd>
+                </div>
+                <div class="command-row">
+                    <dt>trace</dt>
+                    <dd>Rebuild with debug trace info.</dd>
+                </div>
+                <div class="command-row">
+                    <dt>build</dt>
+                    <dd>Build new system (prompts for hostname).</dd>
+                </div>
+                <div class="command-row">
+                    <dt>dir</dt>
+                    <dd>Show tracked config directory.</dd>
+                </div>
+                <div class="command-row">
+                    <dt>git-check</dt>
+                    <dd>Check/pull git repository updates.</dd>
+                </div>
+            </dl>
+        </section>
+
+        <footer class="footer">
+            <span>MIT License</span>
+            <a href="https://github.com/yourusername/yonix">GitHub</a>
+        </footer>
+    </div>
+</body>
+</html>

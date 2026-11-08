@@ -1,0 +1,6 @@
+/target
+/result
+/result-*
+.direnv/
+/node_modules/
+/artifacts/
