@@ -178,7 +178,7 @@ fn path_mode_explicitly_includes_local_files() {
 }
 
 #[test]
-fn lan_listening_is_explicit_and_rejects_public_or_wildcard_addresses() {
+fn listening_accepts_unicast_and_wildcard_addresses() {
     let (_dir, mut config) = fixture();
     assert_eq!(config.listen_address, std::net::Ipv4Addr::LOCALHOST);
     config.listen_address = "10.0.2.142".parse().unwrap();
@@ -195,8 +195,45 @@ fn lan_listening_is_explicit_and_rejects_public_or_wildcard_addresses() {
         "10.0.2.143:9847",
         config.listen_address
     ));
-    for address in ["0.0.0.0", "8.8.8.8", "224.0.0.1", "255.255.255.255"] {
+    for address in ["0.0.0.0", "8.8.8.8"] {
+        config.listen_address = address.parse().unwrap();
+        config.validate().unwrap();
+    }
+    for address in ["224.0.0.1", "255.255.255.255"] {
         config.listen_address = address.parse().unwrap();
         assert!(config.validate().is_err());
+    }
+}
+
+#[test]
+fn wildcard_binding_uses_loopback_for_clients_and_accepts_numeric_hosts() {
+    let (_dir, mut config) = fixture();
+    config.listen_address = std::net::Ipv4Addr::UNSPECIFIED;
+    config.validate().unwrap();
+    assert_eq!(config.base_url(), "http://127.0.0.1:9847");
+    for host in [
+        "localhost:9847",
+        "127.0.0.1:9847",
+        "10.0.2.142:9847",
+        "8.8.8.8:9847",
+    ] {
+        assert!(
+            yonix::server::valid_host(host, config.listen_address),
+            "{host}"
+        );
+    }
+    for host in [
+        "evil.example:9847",
+        "224.0.0.1:9847",
+        "255.255.255.255:9847",
+        "10.0.2.142:0",
+        "10.0.2.142",
+        "10.0.2.142:invalid",
+        "10.0.2.142:65536",
+    ] {
+        assert!(
+            !yonix::server::valid_host(host, config.listen_address),
+            "{host}"
+        );
     }
 }

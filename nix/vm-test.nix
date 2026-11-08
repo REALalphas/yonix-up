@@ -25,6 +25,7 @@ pkgs.testers.runNixOSTest {
       sourceMode = "path";
       package = self.packages.${system}.yonix-headless;
       allowSystemChanges = true;
+      listenAddress = "0.0.0.0";
     };
     environment.systemPackages = [
       pkgs.curl

@@ -49,7 +49,12 @@ pub fn token_matches(expected: &str, supplied: &str) -> bool {
 
 pub fn valid_host(host: &str, address: std::net::Ipv4Addr) -> bool {
     host.rsplit_once(':').is_some_and(|(name, port)| {
-        (matches!(name, "localhost" | "127.0.0.1") || name == address.to_string())
+        (matches!(name, "localhost" | "127.0.0.1")
+            || name == address.to_string()
+            || (address.is_unspecified()
+                && name.parse::<std::net::Ipv4Addr>().is_ok_and(|ip| {
+                    !ip.is_unspecified() && !ip.is_multicast() && !ip.is_broadcast()
+                })))
             && port.parse::<u16>().is_ok_and(|p| p != 0)
     })
 }
@@ -182,7 +187,10 @@ pub async fn run(config: Config) -> Result<()> {
     let engine = Engine::open(config.clone())?;
     let token = crate::engine::ensure_token(&config)?;
     let listener = tokio::net::TcpListener::bind((config.listen_address, config.port)).await?;
-    eprintln!("Yonix listening on {}", config.base_url());
+    eprintln!(
+        "Yonix listening on http://{}:{}",
+        config.listen_address, config.port
+    );
     axum::serve(listener, router(engine, token))
         .with_graceful_shutdown(async {
             let mut terminate =

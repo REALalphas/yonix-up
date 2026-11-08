@@ -552,7 +552,6 @@ mod tests {
             privileged_helper: None,
             source_mode: "git".into(),
             listen_address: std::net::Ipv4Addr::LOCALHOST,
-            allow_public_bind: false,
             peers: Vec::new(),
             cache: None,
         };

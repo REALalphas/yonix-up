@@ -14,7 +14,6 @@ pub struct Config {
     pub source_mode: String,
     pub port: u16,
     pub listen_address: Ipv4Addr,
-    pub allow_public_bind: bool,
     pub state_dir: PathBuf,
     pub privileged_helper: Option<PathBuf>,
     pub peers: Vec<crate::peers::Peer>,
@@ -45,7 +44,6 @@ impl Default for Config {
             source_mode: "git".into(),
             port: 9847,
             listen_address: Ipv4Addr::LOCALHOST,
-            allow_public_bind: false,
             state_dir: state.join("yonix"),
             privileged_helper: None,
             peers: Vec::new(),
@@ -81,14 +79,8 @@ impl Config {
         if !matches!(self.source_mode.as_str(), "git" | "path") {
             bail!("source_mode must be 'git' or 'path'");
         }
-        // 0.0.0.0 is neither loopback nor private, so wildcard/public
-        // binds land here and need the explicit opt-in. Bearer-token auth
-        // is then the only gate — enable only behind a trusted firewall/VPN.
-        if !self.listen_address.is_loopback()
-            && !self.listen_address.is_private()
-            && !self.allow_public_bind
-        {
-            bail!("wildcard/public listen_address needs allow_public_bind = true");
+        if self.listen_address.is_multicast() || self.listen_address.is_broadcast() {
+            bail!("listen_address must be a unicast IPv4 address or 0.0.0.0");
         }
         if self.port == 0 {
             bail!("port must not be zero");
@@ -124,7 +116,13 @@ impl Config {
     }
 
     pub fn base_url(&self) -> String {
-        format!("http://{}:{}", self.listen_address, self.port)
+        // A wildcard is a bind address, not a destination for local clients.
+        let address = if self.listen_address.is_unspecified() {
+            Ipv4Addr::LOCALHOST
+        } else {
+            self.listen_address
+        };
+        format!("http://{address}:{}", self.port)
     }
     pub fn flake_source(&self) -> String {
         format!(

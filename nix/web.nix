@@ -1,6 +1,10 @@
 { lib, stdenvNoCC, nodejs, fetchurl }:
 let
   lock = builtins.fromJSON (builtins.readFile ../package-lock.json);
+  # Include only the release archives actually referenced by the lock file.
+  localArchives = lib.mapAttrsToList (name: pkg:
+    ../. + "/${lib.removePrefix "file:" pkg.resolved}")
+    (lib.filterAttrs (name: pkg: pkg ? resolved && lib.hasPrefix "file:" pkg.resolved) lock.packages);
   archives = lib.mapAttrsToList (name: pkg: fetchurl { url = pkg.resolved; hash = pkg.integrity; })
     (lib.filterAttrs (name: pkg: pkg ? resolved && lib.hasPrefix "https:" pkg.resolved
       && (!(pkg ? libc) || builtins.elem "glibc" pkg.libc)
@@ -11,15 +15,13 @@ in stdenvNoCC.mkDerivation {
   version = "0.1.0";
   src = lib.fileset.toSource {
     root = ../.;
-    fileset = lib.fileset.unions [ ../package.json ../package-lock.json ../tsconfig.json ../frontend ../locales ../vendor ../tests/frontend.test.mjs ];
+    fileset = lib.fileset.unions ([ ../package.json ../package-lock.json ../tsconfig.json ../frontend ../locales ../tests/frontend.test.mjs ] ++ localArchives);
   };
   nativeBuildInputs = [ nodejs ];
   buildPhase = ''
     export HOME=$TMPDIR/home
     mkdir -p "$HOME"
-    for archive in ${lib.escapeShellArgs archives}; do
-      npm cache add "$archive" --ignore-scripts --offline >/dev/null
-    done
+    npm cache add ${lib.escapeShellArgs archives} --ignore-scripts --offline >/dev/null
     npm ci --offline --ignore-scripts --no-audit --no-fund
     patchShebangs node_modules
     npm run build

@@ -30,6 +30,15 @@ fn await_job(client: &Client, id: &str) -> yonix::engine::Job {
 }
 #[test]
 fn authenticated_end_to_end_workflow() {
+    authenticated_workflow(std::net::Ipv4Addr::LOCALHOST);
+}
+
+#[test]
+fn authenticated_workflow_on_all_interfaces() {
+    authenticated_workflow(std::net::Ipv4Addr::UNSPECIFIED);
+}
+
+fn authenticated_workflow(listen_address: std::net::Ipv4Addr) {
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path();
     let repo = root.join("repo with spaces");
@@ -68,7 +77,7 @@ if [ -f fail ]; then exit 7; fi
         peers: Vec::new(),
         cache: None,
         source_mode: "git".into(),
-        listen_address: std::net::Ipv4Addr::LOCALHOST,
+        listen_address,
     };
     let config_file = root.join("config.json");
     fs::write(&config_file, serde_json::to_vec(&config).unwrap()).unwrap();
@@ -107,6 +116,28 @@ if [ -f fail ]; then exit 7; fi
     };
     ready();
     let token = yonix::engine::read_token(&config).unwrap();
+    if listen_address.is_unspecified() {
+        for host in [format!("10.0.2.142:{port}"), format!("8.8.8.8:{port}")] {
+            assert_eq!(
+                http.get(format!("{base}/api/status"))
+                    .header("Host", &host)
+                    .send()
+                    .unwrap()
+                    .status(),
+                401
+            );
+            assert_eq!(
+                http.get(format!("{base}/api/status"))
+                    .header("Host", &host)
+                    .header("Origin", format!("http://{host}"))
+                    .bearer_auth(&token)
+                    .send()
+                    .unwrap()
+                    .status(),
+                200
+            );
+        }
+    }
     assert_eq!(
         http.get(format!("{base}/api/status"))
             .bearer_auth("wrong")

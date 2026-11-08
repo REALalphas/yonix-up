@@ -82,7 +82,7 @@ For remote access, on your client computer:
 ssh -N -L 9847:127.0.0.1:9847 alphas@nas
 ```
 
-Open `http://127.0.0.1:9847` on that computer. Get the token from a separate SSH terminal (`ssh alphas@nas yonix token`) and paste it into the sign-in form. Use another local port if 9847 is occupied. SSH provides encryption and host authentication; public HTTP hosting is intentionally unsupported.
+Open `http://127.0.0.1:9847` on that computer. Get the token from a separate SSH terminal (`ssh alphas@nas yonix token`) and paste it into the sign-in form. Use another local port if 9847 is occupied. SSH provides encryption and host authentication.
 
 For direct access on a trusted local network, explicitly select the host's private IPv4 address:
 
@@ -91,7 +91,9 @@ programs.yonix.listenAddress = "10.0.2.142";
 programs.yonix.openFirewall = true;
 ```
 
-Open `http://10.0.2.142:9847`. Token authentication and same-origin/Host checks remain enabled. This mode uses unencrypted HTTP, so use SSH for untrusted networks. Wildcard and public bind addresses are rejected. For a standalone JSON configuration, set `listen_address` to the same private IPv4 address.
+Open `http://10.0.2.142:9847`. Token authentication and same-origin/Host checks remain enabled. This mode uses unencrypted HTTP, so use SSH for untrusted networks. For a standalone JSON configuration, set `listen_address` to the same IPv4 address.
+
+To listen on all IPv4 interfaces, set `programs.yonix.listenAddress = "0.0.0.0"` (JSON: `"listen_address": "0.0.0.0"`). A concrete public IPv4 address is also accepted. No additional permission option is required; remove the old `allowPublicBind` / `allow_public_bind` setting from existing configurations. Open the panel using the server's numeric interface address. With a wildcard bind, the CLI, desktop and `yonix web` use `127.0.0.1` locally. Host checks accept numeric IPv4 addresses and `localhost`; token authentication and same-origin checks still apply.
 
 A native client can use the same tunnel:
 
@@ -131,6 +133,8 @@ nix shell nixpkgs#xvfb-run nixpkgs#dbus --command \
 
 For a manual uninstalled run, create a JSON configuration with `yonix init`, edit its absolute checkout/state paths and host, and run `yonix --config config.json serve`. In another terminal run `yonix --config config.json gui`. System-changing actions are unavailable without the installed NixOS helper.
 
+Use `yonix-headless` to avoid GTK/libadwaita on servers. Release builds use Cargo's default parallel code generation without LTO to reduce build time. The Nix frontend build includes only the Alpha UI archives referenced by the npm lock file and prepares its offline cache in one npm invocation. Generated `web/` files and frontend-only tests are excluded from the Rust source derivation; production assets are still rebuilt in Nix and embedded into the immutable package.
+
 ## Layout
 
 - `src/engine.rs`: command plans, serialized jobs, logs and persistence.
@@ -145,4 +149,4 @@ For a manual uninstalled run, create a JSON configuration with `yonix init`, edi
 
 To add a language, create a JSON file in `locales/` with the same keys as `en.json`, register it in `src/i18n.rs`, and add its display name to `frontend/i18n.ts`. The Rust and browser tests check the registered files, keys and selector options.
 
-Next work: generation browsing, service-level diff, cancellation semantics, richer progress reporting and accessibility review. Public hosting/TLS and multi-user permissions are outside this first version.
+Next work: generation browsing, service-level diff, cancellation semantics, richer progress reporting and accessibility review. Built-in TLS and multi-user permissions are outside this first version.

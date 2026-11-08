@@ -20,7 +20,7 @@ impl Client {
             .unwrap_or_else(|| config.base_url())
             .trim_end_matches('/')
             .to_string();
-        // A private LAN endpoint must be explicitly selected in the configuration.
+        // A non-loopback endpoint must be explicitly selected in the configuration.
         // URL overrides keep the loopback-only policy to avoid leaking a token accidentally.
         if base != config.base_url() {
             validate_base_url(&base)?;

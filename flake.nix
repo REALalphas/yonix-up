@@ -73,6 +73,7 @@
                     user = "operator";
                     configPath = "/home/operator/nixos";
                     allowSystemChanges = true;
+                    listenAddress = "0.0.0.0";
                     peers.web = {
                       url = "http://10.0.0.2:9847";
                       tokenFile = "/run/secrets/web-token";
@@ -94,6 +95,7 @@
           assert builtins.elem "http://10.0.0.2:9848" config.nix.settings.extra-substituters;
           assert config.systemd.services.yonix.serviceConfig.User == "operator";
           assert config.systemd.services.yonix.serviceConfig.NoNewPrivileges == false;
+          assert config.programs.yonix.cache.listenAddress == "0.0.0.0";
           pkgs.writeText "yonix-module-check" (
             builtins.toJSON {
               configFile = config.environment.etc."yonix/config.json".source;

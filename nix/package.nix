@@ -23,9 +23,8 @@ rustPlatform.buildRustPackage {
       ../build.rs
       ../Cargo.lock
       ../src
-      ../web
       ../locales
-      ../tests
+      (lib.fileset.fileFilter (file: file.hasExt "rs") ../tests)
       ../data
       ../LICENSE
     ];
@@ -37,10 +36,9 @@ rustPlatform.buildRustPackage {
   cargoLock.lockFile = ../Cargo.lock;
   buildNoDefaultFeatures = !withGui;
   nativeBuildInputs = [
-    pkg-config
     makeWrapper
   ]
-  ++ lib.optionals withGui [ wrapGAppsHook4 ];
+  ++ lib.optionals withGui [ pkg-config wrapGAppsHook4 ];
   buildInputs = lib.optionals withGui [
     gtk4
     libadwaita
