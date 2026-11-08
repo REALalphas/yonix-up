@@ -1,17 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
-import { Button, Card, Stack, Text, TextInput } from '@alpha/react';
+import { Button, Card, Checkbox, Stack, Text, TextInput } from '@alpha/react';
 import { api, ApiError, type Connection, type ConnectionCheck } from './model';
 
 type Props = { token: string; gateway: string; t: (key: string) => string; onChange: () => Promise<void>; onAuthenticationError: (error: Error) => void };
 export function ConnectionsPage({ token, gateway, t, onChange, onAuthenticationError }: Props) {
     const [connections, setConnections] = useState<Connection[]>([]);
     const [health, setHealth] = useState<Record<string, 'checking' | 'online' | 'offline'>>({});
-    const [label, setLabel] = useState(''), [url, setUrl] = useState(''), [secret, setSecret] = useState('');
-    const [visible, setVisible] = useState(false), [busy, setBusy] = useState<string | null>(null), [loading, setLoading] = useState(true);
-    const [adding, setAdding] = useState(false), [revision, setRevision] = useState(0);
-    const [error, setError] = useState(''), [checked, setChecked] = useState<ConnectionCheck | null>(null), [added, setAdded] = useState(false), [removing, setRemoving] = useState<string | null>(null);
+    const [busy, setBusy] = useState<string | null>(null), [loading, setLoading] = useState(true);
+    const [revision, setRevision] = useState(0);
+    const [error, setError] = useState(''), [added, setAdded] = useState(false), [removing, setRemoving] = useState<string | null>(null);
     const controller = useRef(new AbortController());
-    const valid = !!label.trim() && !!url.trim() && secret.trim().length === 64;
+    const [created, setCreated] = useState(''), [copied, setCopied] = useState(false);
+    const [link, setLink] = useState(''), [code, setCode] = useState(''), [origin, setOrigin] = useState(''), [allowPublic, setAllowPublic] = useState(false), [paired, setPaired] = useState(false);
     function fail(value: unknown) {
         if (controller.current.signal.aborted) return;
         const failure = value instanceof Error ? value : new Error(String(value));
@@ -45,34 +45,6 @@ export function ConnectionsPage({ token, gateway, t, onChange, onAuthenticationE
         void refresh();
         return () => { active.abort(); clearTimeout(timer); };
     }, [token, revision]);
-    useEffect(() => {
-        if (adding) document.getElementById('connection-label')?.focus();
-    }, [adding]);
-    function closeForm() {
-        setAdding(false); setSecret(''); setLabel(''); setUrl(''); setVisible(false); setChecked(null);
-        requestAnimationFrame(() => document.getElementById('add-instance')?.focus());
-    }
-    function change(set: (value: string) => void, value: string) { set(value); setChecked(null); setAdded(false); setError(''); }
-    async function submit(save: boolean) {
-        if (!valid || busy) return;
-        setBusy(save ? 'save' : 'check'); setError(''); setAdded(false);
-        try {
-            const body = { label: label.trim(), url: url.trim(), token: secret.trim() };
-            if (save) {
-                const entry = await api<Connection>(token, 'connections', controller.current.signal, body);
-                if (controller.current.signal.aborted) return;
-                setConnections(current => [...current, entry]);
-                setHealth(current => ({ ...current, [entry.id]: 'online' }));
-                closeForm(); setAdded(true);
-                await onChange();
-                setRevision(value => value + 1);
-            } else {
-                const result = await api<ConnectionCheck>(token, 'connections/check', controller.current.signal, body);
-                if (!controller.current.signal.aborted) setChecked(result);
-            }
-        } catch (e) { fail(e); }
-        finally { if (!controller.current.signal.aborted) setBusy(null); }
-    }
     async function remove(id: string) {
         if (busy) return;
         setBusy(id); setError('');
@@ -85,20 +57,74 @@ export function ConnectionsPage({ token, gateway, t, onChange, onAuthenticationE
         } catch (e) { fail(e); }
         finally { if (!controller.current.signal.aborted) setBusy(null); }
     }
+    function pairingFail(value: unknown) {
+        if (controller.current.signal.aborted) return;
+        const failure = value instanceof Error ? value : new Error(String(value));
+        if (failure instanceof ApiError && failure.status === 401) onAuthenticationError(failure);
+        else setError(t('pairingFailed') + ': ' + failure.message);
+    }
+    async function createLink(signal: AbortSignal) {
+        setBusy('pair'); setError(''); setCreated(''); setCopied(false);
+        try {
+            const reply = await api<{code: string; link: string}>(token, 'pairings', signal, {});
+            if (signal.aborted) return;
+            setCreated(reply.link);
+        } catch (e) { pairingFail(e); }
+        finally { if (!signal.aborted) setBusy(null); }
+    }
+    useEffect(() => {
+        const active = new AbortController();
+        void createLink(active.signal);
+        return () => { active.abort(); };
+    }, [token]);
+    function splitIncoming(value: string) {
+        // Pasting a full link auto-fills everything: the payload head stays in
+        // the link field, the 6-digit code moves to its own field.
+        const text = value.trim();
+        if (!text.includes('#')) {
+            setLink(text); setPaired(false); setError('');
+            return;
+        }
+        const head = text.slice(0, text.indexOf('#'));
+        const tail = text.slice(text.indexOf('#') + 1).trim().replace(/\D/g, '').slice(0, 6);
+        setLink(head); setCode(tail); setPaired(false); setError('');
+    }
+    async function acceptLink() {
+        const cleanLink = link.trim(), cleanCode = code.trim();
+        if (busy || (!cleanLink && !cleanCode)) return;
+        const body = cleanLink
+            ? (cleanCode ? cleanLink + '#' + cleanCode : cleanLink)
+            : cleanCode;
+        setBusy('accept'); setError(''); setPaired(false);
+        try {
+            const entry = await api<Connection>(token, 'pairings/accept', controller.current.signal, { link: body, origin: origin.trim() || undefined, allow_public: allowPublic });
+            if (controller.current.signal.aborted) return;
+            setConnections(current => [...current, entry]);
+            setHealth(current => ({ ...current, [entry.id]: 'online' }));
+            setLink(''); setCode(''); setOrigin(''); setAllowPublic(false); setPaired(true);
+            await onChange();
+            setRevision(value => value + 1);
+        } catch (e) { pairingFail(e); }
+        finally { if (!controller.current.signal.aborted) setBusy(null); }
+    }
+    async function copyLink() {
+        try { await navigator.clipboard.writeText(created); setCopied(true); }
+        catch { setCopied(false); }
+    }
     return <Stack gap={5}>
-        <div className="page-actions"><Button id="add-instance" disabled={adding} onPress={() => { setAdding(true); setAdded(false); }}>{t('addInstance')}</Button></div>
+        <Card><Stack gap={4}>
+            <TextInput id="pairing-created" label={t('pairingLink')} labelPlacement="above" readOnly value={created} placeholder={t('pairingLinkPlaceholder')} onValueChange={() => {}} />
+            <div className="button-row"><Button variant="simple" disabled={!!busy || !created} onPress={() => void copyLink()}>{t('copyPairingLink')}</Button></div>
+            {copied && <div role="status"><Text>{t('pairingLinkCopied')}</Text></div>}
+            <TextInput id="pairing-link" label={t('pairingPasteLink')} labelPlacement="above" placeholder={t('pairingLinkPlaceholder')} value={link} onValueChange={value => splitIncoming(value)} />
+            <TextInput id="pairing-code" label={t('pairingCode')} labelPlacement="above" placeholder={t('pairingCodePlaceholder')} value={code} onValueChange={value => { setCode(value.replace(/\D/g, '').slice(0, 6)); setPaired(false); setError(''); }} />
+            <TextInput id="pairing-origin" label={t('pairingOrigin')} labelPlacement="above" type="url" placeholder={t('pairingOriginPlaceholder')} value={origin} onValueChange={value => { setOrigin(value); setPaired(false); setError(''); }} />
+            <Checkbox id="pairing-public" label={t('pairingPublicConfirm')} hint={t('pairingPublicHelp')} checked={allowPublic} onCheckedChange={setAllowPublic} />
+            <div className="button-row"><Button disabled={!!busy || (!link.trim() && !code.trim())} loading={busy === 'accept'} onPress={() => void acceptLink()}>{t('pairingAccept')}</Button></div>
+            {paired && <div role="status"><Text>{t('pairingPaired')}</Text></div>}
+        </Stack></Card>
         {error && <div role="alert"><Card><Stack gap={3}><Text weight="medium">{t('connectionFailed')}</Text><Text>{error}</Text></Stack></Card></div>}
         {added && <div role="status"><Text>{t('connectionAdded')}</Text></div>}
-        {adding && <Card><Stack gap={5}>
-            <Text as="h2" font="heading" size="title" weight="medium">{t('addInstance')}</Text>
-            <form onSubmit={event => { event.preventDefault(); void submit(true); }}><Stack gap={4}>
-                <TextInput id="connection-label" labelPlacement="above" label={t('connectionName')} placeholder="Web" required disabled={!!busy} value={label} onValueChange={value => change(setLabel, value)}/>
-                <TextInput id="connection-url" labelPlacement="above" label={t('connectionAddress')} type="url" placeholder="http://10.0.0.20:9847" required disabled={!!busy} value={url} onValueChange={value => change(setUrl, value)}/>
-                <TextInput id="connection-token" labelPlacement="above" label={t('accessToken')} type="password" icon="key" required autoComplete="off" disabled={!!busy} value={secret} onValueChange={value => change(setSecret, value)} passwordVisible={visible} onPasswordVisibleChange={setVisible} hint={t('connectionTokenHelp')}/>
-                {checked && <div role="status"><Text>{t('connectionVerified')} <Text as="span" font="mono">{checked.host} · Yonix {checked.version}</Text></Text></div>}
-                <div className="button-row"><Button type="button" variant="simple" disabled={!!busy} onPress={closeForm}>{t('cancel')}</Button><Button type="button" variant="simple" disabled={!valid || !!busy} loading={busy === 'check'} onPress={() => void submit(false)}>{t('testConnection')}</Button><Button type="submit" disabled={!valid || !!busy} loading={busy === 'save'}>{t('addInstance')}</Button></div>
-            </Stack></form>
-        </Stack></Card>}
         <div className="connections-grid">
             <Card><Stack gap={3}><Text as="h2" font="heading" size="title" weight="medium">{gateway}</Text><Text tone="secondary">{t('connectionOnline')}</Text></Stack></Card>
             {connections.map(entry => <Card key={entry.id}><Stack gap={4}>

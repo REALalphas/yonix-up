@@ -242,7 +242,8 @@ fn pairing_links_exchange_tokens_burn_codes_and_reject_replay() {
         .json()
         .unwrap();
     let code = mint["code"].as_str().unwrap();
-    assert_eq!(code.len(), 32);
+    assert_eq!(code.len(), 6);
+    assert!(code.bytes().all(|b| b.is_ascii_digit()));
     assert!(!mint.to_string().contains(&initiator_token));
     // Server-side pairing state is a private file next to connections.json.
     assert_eq!(
@@ -297,15 +298,17 @@ fn pairing_links_exchange_tokens_burn_codes_and_reject_replay() {
     // Replay fails: the code burned on first use.
     assert_eq!(redeem(joiner_body).status(), 401);
     // Bad codes and payloads are rejected with 400/401, never 500.
+    for bad in ["zz", "12345", "1234567", "abcdef"] {
+        assert_eq!(
+            redeem(
+                json!({"code": bad, "host": "web", "token": joiner_token, "url": joiner.base_url()})
+            )
+            .status(),
+            400
+        );
+    }
     assert_eq!(
-        redeem(
-            json!({"code": "zz", "host": "web", "token": joiner_token, "url": joiner.base_url()})
-        )
-        .status(),
-        400
-    );
-    assert_eq!(
-        redeem(json!({"code": code, "host": "web", "token": "zz", "url": joiner.base_url()}))
+        redeem(json!({"code": "000000", "host": "web", "token": "zz", "url": joiner.base_url()}))
             .status(),
         400
     );

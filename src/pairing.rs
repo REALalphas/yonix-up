@@ -160,10 +160,10 @@ pub fn parse_link(text: &str) -> Result<PairLink> {
     }
 }
 
-/// A 128-bit code rendered as 32 lowercase hex chars.
+/// A short pairing code: exactly 6 ASCII digits, easy to read aloud or type.
 pub fn validate_code(code: &str) -> Result<()> {
-    if code.len() != 32 || !code.bytes().all(|b| b.is_ascii_hexdigit()) {
-        bail!("Pairing code must be 32 hex characters");
+    if code.len() != 6 || !code.bytes().all(|b| b.is_ascii_digit()) {
+        bail!("Pairing code must be 6 digits");
     }
     Ok(())
 }

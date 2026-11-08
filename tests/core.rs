@@ -438,7 +438,7 @@ fn pairing_link_round_trips_payload_then_code() {
             },
         ],
     };
-    let code = "ab".repeat(16);
+    let code = "482916".to_string();
     let link = yonix::pairing::encode_link(&payload, &code).unwrap();
     let (head, tail) = link.split_once('#').unwrap();
     assert_eq!(tail, code);
@@ -451,7 +451,7 @@ fn pairing_link_round_trips_payload_then_code() {
 #[test]
 fn pairing_bare_code_needs_manual_address_top_up() {
     use yonix::pairing::parse_link;
-    let code = "cd".repeat(16);
+    let code = "731045".to_string();
     let parsed = parse_link(&code).unwrap();
     assert_eq!(parsed.code, code);
     assert!(parsed.payload.paths.is_empty());
@@ -469,18 +469,12 @@ fn pairing_rejects_bad_links_codes_and_paths() {
         }],
     };
     // Bad codes.
-    for bad in [
-        "",
-        "xyz",
-        &"ab".repeat(15),
-        &"ab".repeat(17),
-        &"zz".repeat(16),
-    ] {
+    for bad in ["", "xyz", "12345", "1234567", "abcdef", "12 345"] {
         assert!(parse_link(bad).is_err(), "{bad}");
         assert!(yonix::pairing::encode_link(&payload, bad).is_err(), "{bad}");
     }
     // Bad payloads: version, host, path count, URL policy.
-    let code = "ab".repeat(16);
+    let code = "482916".to_string();
     for bad in [
         PairPayload {
             v: 2,
@@ -499,7 +493,7 @@ fn pairing_rejects_bad_links_codes_and_paths() {
         let _ = (bad, &code);
     }
     assert!(parse_link("!!!#ab").is_err());
-    assert!(parse_link(&format!("{}#{}", "ab".repeat(16), "zz")).is_err());
+    assert!(parse_link(&format!("{}#{}", "482916", "zz")).is_err());
     // encode_link validates paths as well.
     for (url, role) in [
         ("http://8.8.8.8:9847/", PathRole::Direct),
@@ -546,5 +540,5 @@ fn pairing_rejects_bad_links_codes_and_paths() {
     };
     assert!(yonix::pairing::encode_link(&many, &code).is_err());
     // Padded base64 is rejected.
-    assert!(parse_link("YWJjZA==#ab").is_err());
+    assert!(parse_link("YWJjZA==#12").is_err());
 }

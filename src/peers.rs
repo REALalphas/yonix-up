@@ -493,10 +493,21 @@ fn pairing_code_expired(created: u64) -> bool {
 }
 
 fn random_code() -> Result<String> {
+    // Six decimal digits from rejection-sampled /dev/urandom bytes so every
+    // 000000..=999999 value is equally likely.
     use std::io::Read;
-    let mut bytes = [0u8; 16];
-    std::fs::File::open("/dev/urandom")?.read_exact(&mut bytes)?;
-    Ok(bytes.iter().map(|b| format!("{b:02x}")).collect())
+    let mut digits = String::with_capacity(6);
+    let mut byte = [0u8; 1];
+    let mut random = std::fs::File::open("/dev/urandom")?;
+    while digits.len() < 6 {
+        random.read_exact(&mut byte)?;
+        // 250 is the largest multiple of 10 below 256: values above it are
+        // discarded to keep the digit distribution uniform.
+        if byte[0] < 250 {
+            digits.push((b'0' + byte[0] % 10) as char);
+        }
+    }
+    Ok(digits)
 }
 
 fn validate_pair_id(pair_id: &str) -> Result<()> {

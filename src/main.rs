@@ -78,7 +78,7 @@ enum Commands {
     },
     /// Redeem a pairing link or bare code and link both hosts
     PairAccept {
-        /// Full link (base64url#code) or a bare 32-hex code (manual address top-up)
+        /// Full link (base64url#code) or a bare 6-digit code (manual address top-up)
         link: String,
         /// Initiator address when redeeming a bare code
         #[arg(long)]
