@@ -113,11 +113,11 @@ export function ConnectionsPage({ token, gateway, t, onChange, onAuthenticationE
     }
     return <Stack gap={5}>
         <Card><Stack gap={4}>
-            <TextInput id="pairing-created" label={t('pairingLink')} labelPlacement="above" readOnly value={created} placeholder={t('pairingLinkPlaceholder')} onValueChange={() => {}} />
+            <TextInput id="pairing-created" label={t('pairingLink')} labelPlacement="above" readOnly type="password" value={created} placeholder={t('pairingLinkPlaceholder')} onValueChange={() => {}} />
             <div className="button-row"><Button variant="simple" disabled={!!busy || !created} onPress={() => void copyLink()}>{t('copyPairingLink')}</Button></div>
             {copied && <div role="status"><Text>{t('pairingLinkCopied')}</Text></div>}
-            <TextInput id="pairing-link" label={t('pairingPasteLink')} labelPlacement="above" placeholder={t('pairingLinkPlaceholder')} value={link} onValueChange={value => splitIncoming(value)} />
-            <TextInput id="pairing-code" label={t('pairingCode')} labelPlacement="above" placeholder={t('pairingCodePlaceholder')} value={code} onValueChange={value => { setCode(value.replace(/\D/g, '').slice(0, 6)); setPaired(false); setError(''); }} />
+            <div className="actions-grid"><TextInput id="pairing-link" label={t('pairingPasteLink')} labelPlacement="above" placeholder={t('pairingLinkPlaceholder')} value={link} onValueChange={value => splitIncoming(value)} />
+            <TextInput id="pairing-code" label={t('pairingCode')} labelPlacement="above" type="password" placeholder={t('pairingCodePlaceholder')} value={code} onValueChange={value => { setCode(value.replace(/\D/g, '').slice(0, 6)); setPaired(false); setError(''); }} /></div>
             <TextInput id="pairing-origin" label={t('pairingOrigin')} labelPlacement="above" type="url" placeholder={t('pairingOriginPlaceholder')} value={origin} onValueChange={value => { setOrigin(value); setPaired(false); setError(''); }} />
             <Checkbox id="pairing-public" label={t('pairingPublicConfirm')} hint={t('pairingPublicHelp')} checked={allowPublic} onCheckedChange={setAllowPublic} />
             <div className="button-row"><Button disabled={!!busy || (!link.trim() && !code.trim())} loading={busy === 'accept'} onPress={() => void acceptLink()}>{t('pairingAccept')}</Button></div>
