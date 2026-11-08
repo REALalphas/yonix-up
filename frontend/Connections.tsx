@@ -11,7 +11,10 @@ export function ConnectionsPage({ token, gateway, t, onChange, onAuthenticationE
     const [error, setError] = useState(''), [added, setAdded] = useState(false), [removing, setRemoving] = useState<string | null>(null);
     const controller = useRef(new AbortController());
     const [created, setCreated] = useState(''), [copied, setCopied] = useState(false);
-    const [link, setLink] = useState(''), [code, setCode] = useState(''), [origin, setOrigin] = useState(''), [allowPublic, setAllowPublic] = useState(false), [paired, setPaired] = useState(false);
+    const [link, setLink] = useState(''), [code, setCode] = useState(''), [codeVisible, setCodeVisible] = useState(false), [origin, setOrigin] = useState(''), [allowPublic, setAllowPublic] = useState(false), [paired, setPaired] = useState(false);
+    // The generated link stays copyable in full, but the one-time code after
+    // `#` is masked on screen.
+    const maskedCreated = created.includes('#') ? created.slice(0, created.indexOf('#') + 1) + '••••••' : created;
     function fail(value: unknown) {
         if (controller.current.signal.aborted) return;
         const failure = value instanceof Error ? value : new Error(String(value));
@@ -113,11 +116,11 @@ export function ConnectionsPage({ token, gateway, t, onChange, onAuthenticationE
     }
     return <Stack gap={5}>
         <Card><Stack gap={4}>
-            <TextInput id="pairing-created" label={t('pairingLink')} labelPlacement="above" readOnly type="password" value={created} placeholder={t('pairingLinkPlaceholder')} onValueChange={() => {}} />
+            <TextInput id="pairing-created" label={t('pairingLink')} labelPlacement="above" readOnly showIcon={false} value={maskedCreated} placeholder={t('pairingLinkPlaceholder')} onValueChange={() => {}} />
             <div className="button-row"><Button variant="simple" disabled={!!busy || !created} onPress={() => void copyLink()}>{t('copyPairingLink')}</Button></div>
             {copied && <div role="status"><Text>{t('pairingLinkCopied')}</Text></div>}
-            <div className="actions-grid"><TextInput id="pairing-link" label={t('pairingPasteLink')} labelPlacement="above" placeholder={t('pairingLinkPlaceholder')} value={link} onValueChange={value => splitIncoming(value)} />
-            <TextInput id="pairing-code" label={t('pairingCode')} labelPlacement="above" type="password" placeholder={t('pairingCodePlaceholder')} value={code} onValueChange={value => { setCode(value.replace(/\D/g, '').slice(0, 6)); setPaired(false); setError(''); }} /></div>
+            <div className="pairing-row"><TextInput id="pairing-link" label={t('pairingPasteLink')} labelPlacement="above" showIcon={false} placeholder={t('pairingLinkPlaceholder')} value={link} onValueChange={value => splitIncoming(value)} />
+            <TextInput id="pairing-code" label={t('pairingCode')} labelPlacement="above" type="password" showIcon={true} passwordVisible={codeVisible} onPasswordVisibleChange={setCodeVisible} placeholder={t('pairingCodePlaceholder')} value={code} onValueChange={value => { setCode(value.replace(/\D/g, '').slice(0, 6)); setPaired(false); setError(''); }} /></div>
             <TextInput id="pairing-origin" label={t('pairingOrigin')} labelPlacement="above" type="url" placeholder={t('pairingOriginPlaceholder')} value={origin} onValueChange={value => { setOrigin(value); setPaired(false); setError(''); }} />
             <Checkbox id="pairing-public" label={t('pairingPublicConfirm')} hint={t('pairingPublicHelp')} checked={allowPublic} onCheckedChange={setAllowPublic} />
             <div className="button-row"><Button disabled={!!busy || (!link.trim() && !code.trim())} loading={busy === 'accept'} onPress={() => void acceptLink()}>{t('pairingAccept')}</Button></div>
