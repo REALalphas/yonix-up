@@ -56,6 +56,7 @@ let
     host = cfg.host;
     port = cfg.port;
     listen_address = cfg.listenAddress;
+    allow_public_bind = cfg.allowPublicBind;
     state_dir = "/var/lib/yonix";
     peers = lib.mapAttrsToList (id: peer: {
       inherit id;
@@ -107,8 +108,9 @@ in
     listenAddress = mkOption {
       type = types.str;
       default = "127.0.0.1";
-      description = "Concrete loopback or private LAN IPv4 address. LAN mode uses HTTP; use only on a trusted local network, or keep loopback and use SSH. Wildcard and public addresses are rejected.";
+      description = "Concrete loopback or private LAN IPv4 address. LAN mode uses HTTP; use only on a trusted local network, or keep loopback and use SSH. Wildcard/public bind needs allowPublicBind.";
     };
+    allowPublicBind = mkEnableOption "binding Yonix to a wildcard or public address (bearer-token auth is then the only gate — enable only behind a trusted firewall/VPN)";
     port = mkOption {
       type = types.port;
       default = 9847;
