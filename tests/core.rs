@@ -23,7 +23,14 @@ fn build_never_switches_or_elevates() {
     let steps = plan(&config, Action::Build).unwrap();
     assert_eq!(steps.len(), 1);
     assert_eq!(steps[0].program, "nix");
-    assert_eq!(steps[0].args[0], "build");
+    assert_eq!(
+        steps[0].args[0..3],
+        [
+            "--extra-experimental-features",
+            "nix-command flakes",
+            "build"
+        ]
+    );
     assert!(steps[0].args.contains(&"--no-write-lock-file".into()));
     assert!(
         steps[0]
@@ -35,10 +42,28 @@ fn build_never_switches_or_elevates() {
     assert!(!steps[0].args.iter().any(|a| a == "switch" || a == "sudo"));
 }
 #[test]
+fn nix_steps_enable_experimental_features() {
+    let (_dir, config) = fixture();
+    for action in [
+        Action::Check,
+        Action::Build,
+        Action::Diff,
+        Action::UpdateInputs,
+    ] {
+        for step in plan(&config, action).unwrap() {
+            assert_eq!(step.program, "nix");
+            assert_eq!(
+                step.args[0..2],
+                ["--extra-experimental-features", "nix-command flakes"]
+            );
+        }
+    }
+}
+#[test]
 fn check_evaluates_without_building() {
     let (_dir, config) = fixture();
     let steps = plan(&config, Action::Check).unwrap();
-    assert_eq!(steps[0].args[0], "eval");
+    assert_eq!(steps[0].args[2], "eval");
     assert!(steps[0].args.last().unwrap().ends_with(".drvPath"));
 }
 #[test]
@@ -49,6 +74,8 @@ fn inputs_update_does_not_apply() {
     assert_eq!(
         steps[0].args,
         [
+            "--extra-experimental-features",
+            "nix-command flakes",
             "flake",
             "update",
             "--flake",
@@ -62,7 +89,7 @@ fn diff_builds_then_compares_running_system() {
     let steps = plan(&config, Action::Diff).unwrap();
     assert_eq!(steps.len(), 2);
     assert_eq!(
-        steps[1].args[0..3],
+        steps[1].args[2..5],
         ["store", "diff-closures", "/run/current-system"]
     );
 }

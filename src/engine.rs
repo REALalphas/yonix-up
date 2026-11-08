@@ -81,6 +81,18 @@ impl Step {
             args,
         }
     }
+    /// A `nix` invocation that works regardless of the user's nix.conf.
+    /// The NixOS module sets NIX_CONFIG for the systemd service, but the
+    /// daemon/CLI can also run elsewhere, where `nix-command` and `flakes`
+    /// may be disabled (the default on plain Nix installs).
+    fn nix(args: Vec<String>) -> Self {
+        let mut full = vec![
+            "--extra-experimental-features".into(),
+            "nix-command flakes".into(),
+        ];
+        full.extend(args);
+        Self::new("nix", full)
+    }
 }
 
 pub fn plan(config: &Config, action: Action) -> Result<Vec<Step>> {
@@ -109,49 +121,37 @@ pub fn plan(config: &Config, action: Action) -> Result<Vec<Step>> {
         .to_string_lossy()
         .into_owned();
     let build = || {
-        Step::new(
-            "nix",
-            vec![
-                "build".into(),
-                "--no-write-lock-file".into(),
-                "--out-link".into(),
-                result.clone(),
-                target.clone(),
-            ],
-        )
+        Step::nix(vec![
+            "build".into(),
+            "--no-write-lock-file".into(),
+            "--out-link".into(),
+            result.clone(),
+            target.clone(),
+        ])
     };
     Ok(match action {
-        Action::Check => vec![Step::new(
-            "nix",
-            vec![
-                "eval".into(),
-                "--raw".into(),
-                "--no-write-lock-file".into(),
-                format!("{target}.drvPath"),
-            ],
-        )],
+        Action::Check => vec![Step::nix(vec![
+            "eval".into(),
+            "--raw".into(),
+            "--no-write-lock-file".into(),
+            format!("{target}.drvPath"),
+        ])],
         Action::Build => vec![build()],
         Action::Diff => vec![
             build(),
-            Step::new(
-                "nix",
-                vec![
-                    "store".into(),
-                    "diff-closures".into(),
-                    "/run/current-system".into(),
-                    result,
-                ],
-            ),
+            Step::nix(vec![
+                "store".into(),
+                "diff-closures".into(),
+                "/run/current-system".into(),
+                result,
+            ]),
         ],
-        Action::UpdateInputs => vec![Step::new(
-            "nix",
-            vec![
-                "flake".into(),
-                "update".into(),
-                "--flake".into(),
-                config.config_path.to_string_lossy().into_owned(),
-            ],
-        )],
+        Action::UpdateInputs => vec![Step::nix(vec![
+            "flake".into(),
+            "update".into(),
+            "--flake".into(),
+            config.config_path.to_string_lossy().into_owned(),
+        ])],
         _ => unreachable!(),
     })
 }
