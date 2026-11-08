@@ -30,15 +30,15 @@ fn await_job(client: &Client, id: &str) -> yonix::engine::Job {
 }
 #[test]
 fn authenticated_end_to_end_workflow() {
-    authenticated_workflow(std::net::Ipv4Addr::LOCALHOST);
+    authenticated_workflow(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST));
 }
 
 #[test]
 fn authenticated_workflow_on_all_interfaces() {
-    authenticated_workflow(std::net::Ipv4Addr::UNSPECIFIED);
+    authenticated_workflow(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED));
 }
 
-fn authenticated_workflow(listen_address: std::net::Ipv4Addr) {
+fn authenticated_workflow(listen_address: std::net::IpAddr) {
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path();
     let repo = root.join("repo with spaces");
@@ -297,5 +297,107 @@ if [ -f fail ]; then exit 7; fi
         .unwrap();
     let history: Value = serde_json::from_slice(&cli.stdout).unwrap();
     assert_eq!(history.as_array().unwrap().len(), before);
+    drop(process);
+}
+
+#[test]
+fn legacy_workflow_uses_nixos_rebuild() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path();
+    let repo = root.join("repo with spaces");
+    let bin = root.join("bin");
+    fs::create_dir_all(&repo).unwrap();
+    fs::create_dir(&bin).unwrap();
+    fs::write(repo.join("configuration.nix"), "{ }").unwrap();
+    let shell = std::env::split_paths(&std::env::var_os("PATH").unwrap())
+        .map(|p| p.join("sh"))
+        .find(|p| p.is_file())
+        .unwrap();
+    // `nix store diff-closures` still goes through `nix`; the rebuild itself
+    // through `nixos-rebuild`, each logging its own invocation.
+    for tool in ["nix", "nixos-rebuild"] {
+        fs::write(
+            bin.join(tool),
+            format!(
+                r#"#!{}
+printf 'stdout: %s\n' "$*"
+printf '%s\n' "$@" >> {tool}-arguments
+if [ -f fail ]; then exit 7; fi
+"#,
+                shell.display()
+            ),
+        )
+        .unwrap();
+        fs::set_permissions(bin.join(tool), fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let socket = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = socket.local_addr().unwrap().port();
+    drop(socket);
+    let config = Config {
+        config_path: repo.clone(),
+        state_dir: root.join("state"),
+        host: "nas".into(),
+        port,
+        privileged_helper: None,
+        peers: Vec::new(),
+        cache: None,
+        source_mode: "git".into(),
+        listen_address: std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
+    };
+    let config_file = root.join("config.json");
+    fs::write(&config_file, serde_json::to_vec(&config).unwrap()).unwrap();
+    let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap());
+    let process = Process(
+        Command::new(env!("CARGO_BIN_EXE_yonix"))
+            .args(["--config", config_file.to_str().unwrap(), "serve"])
+            .env("PATH", &path)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
+    let http = reqwest::blocking::Client::builder()
+        .no_proxy()
+        .timeout(Duration::from_secs(5))
+        .build()
+        .unwrap();
+    let base = config.base_url();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        if http
+            .get(format!("{base}/api/status"))
+            .send()
+            .is_ok_and(|r| r.status() == 401)
+        {
+            break;
+        }
+        assert!(Instant::now() < deadline, "Daemon did not start");
+        thread::sleep(Duration::from_millis(40));
+    }
+    let client = Client::new(&config, None, None).unwrap();
+    let status = client.status().unwrap();
+    assert_eq!(status.host, "nas");
+    assert_eq!(status.config_kind, yonix::config::ConfigKind::Legacy);
+    // No flake.lock exists for legacy environments.
+    assert!(client.start(Action::UpdateInputs, true).is_err());
+    let build = client.start(Action::Build, false).unwrap();
+    assert_eq!(await_job(&client, &build.id).status, "succeeded");
+    // Legacy builds run in `state_dir` (nixos-rebuild drops `result` in cwd).
+    let rebuild_args =
+        fs::read_to_string(config.state_dir.join("nixos-rebuild-arguments")).unwrap();
+    assert!(rebuild_args.contains("--no-flake"));
+    assert!(rebuild_args.contains(&format!(
+        "nixos-config={}/configuration.nix",
+        repo.display()
+    )));
+    assert!(!rebuild_args.contains("--flake"));
+    let log = client.log(&build.id).unwrap();
+    assert!(log.contains("$ nixos-rebuild"));
+    let diff = client.start(Action::Diff, false).unwrap();
+    assert_eq!(await_job(&client, &diff.id).status, "succeeded");
+    assert!(client.log(&diff.id).unwrap().contains("diff-closures"));
+    let check = client.start(Action::Check, false).unwrap();
+    assert_eq!(await_job(&client, &check.id).status, "succeeded");
+    assert!(client.log(&check.id).unwrap().contains("dry-build"));
     drop(process);
 }

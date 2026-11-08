@@ -7,6 +7,7 @@
   gtk4,
   libadwaita,
   nix,
+  nixos-rebuild,
   git,
   xdg-utils,
   callPackage,
@@ -49,11 +50,13 @@ rustPlatform.buildRustPackage {
     install -Dm644 data/io.github.realalphas.Yonix.svg $out/share/icons/hicolor/scalable/apps/io.github.realalphas.Yonix.svg
   '';
   # wrapGAppsHook wraps the GUI build; headless needs its own PATH wrapper.
+  # nixos-rebuild covers legacy check/build plans outside the systemd service.
   postFixup = ''
     wrapProgram $out/bin/yonix --prefix PATH : ${
       lib.makeBinPath (
         [
           nix
+          nixos-rebuild
           git
         ]
         ++ lib.optionals withGui [ xdg-utils ]

@@ -61,6 +61,10 @@ pub struct Status {
     pub active: Option<String>,
     #[serde(default)]
     pub cache: Option<CacheStatus>,
+    /// Environment type detected from `config_path`. Defaults to flake so
+    /// that statuses from older (flake-only) peers still deserialize.
+    #[serde(default)]
+    pub config_kind: crate::config::ConfigKind,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -73,12 +77,19 @@ pub struct CacheStatus {
 pub struct Step {
     pub program: String,
     pub args: Vec<String>,
+    /// Working directory override. `None` keeps the historical behavior
+    /// (run inside `config_path` when it is a directory).
+    /// Legacy `nixos-rebuild build` has no `--out-link` flag: it always
+    /// leaves a `result` symlink in the current directory, so legacy
+    /// builds run in `state_dir` to keep the GC root next to the flake one.
+    pub cwd: Option<PathBuf>,
 }
 impl Step {
     fn new(program: &str, args: Vec<String>) -> Self {
         Self {
             program: program.into(),
             args,
+            cwd: None,
         }
     }
     /// A `nix` invocation that works regardless of the user's nix.conf.
@@ -109,6 +120,9 @@ pub fn plan(config: &Config, action: Action) -> Result<Vec<Step>> {
                 action.name().into(),
             ],
         )]);
+    }
+    if config.config_kind() == crate::config::ConfigKind::Legacy {
+        return legacy_plan(config, action);
     }
     let target = format!(
         "{}#nixosConfigurations.{}.config.system.build.toplevel",
@@ -152,6 +166,54 @@ pub fn plan(config: &Config, action: Action) -> Result<Vec<Step>> {
             "--flake".into(),
             config.config_path.to_string_lossy().into_owned(),
         ])],
+        _ => unreachable!(),
+    })
+}
+
+/// Plans for legacy (non-flake) configurations. `source_mode` does not
+/// apply here: there is no flake input for it to describe. The `--no-flake`
+/// flag guards against a stray `flake.nix` appearing mid-flight (detection
+/// says legacy, but `nixos-rebuild` would otherwise auto-switch to it).
+fn legacy_plan(config: &Config, action: Action) -> Result<Vec<Step>> {
+    if action == Action::UpdateInputs {
+        bail!("Legacy configurations have no flake.lock; update channels outside Yonix");
+    }
+    let include = format!(
+        "nixos-config={}",
+        config
+            .config_path
+            .join("configuration.nix")
+            .to_string_lossy()
+    );
+    let rebuild = |args: Vec<String>| {
+        let mut full = vec!["--no-flake".into(), "-I".into(), include.clone()];
+        full.extend(args);
+        Step::new("nixos-rebuild", full)
+    };
+    let result = config
+        .state_dir
+        .join("result")
+        .to_string_lossy()
+        .into_owned();
+    // `nixos-rebuild build` has no `--out-link`: the `result` symlink lands
+    // in the working directory, so run it in `state_dir` (see `Step::cwd`).
+    let build = || {
+        let mut step = rebuild(vec!["build".into()]);
+        step.cwd = Some(config.state_dir.clone());
+        step
+    };
+    Ok(match action {
+        Action::Check => vec![rebuild(vec!["dry-build".into()])],
+        Action::Build => vec![build()],
+        Action::Diff => vec![
+            build(),
+            Step::nix(vec![
+                "store".into(),
+                "diff-closures".into(),
+                "/run/current-system".into(),
+                result,
+            ]),
+        ],
         _ => unreachable!(),
     })
 }
@@ -234,6 +296,7 @@ impl Engine {
             current_system: fs::read_link("/run/current-system").ok(),
             system_changes_enabled: self.config.privileged_helper.is_some(),
             active: self.inner.lock().unwrap().active.clone(),
+            config_kind: self.config.config_kind(),
         }
     }
     pub fn jobs(&self) -> Vec<Job> {
@@ -268,11 +331,14 @@ impl Engine {
     }
     pub fn start(&self, action: Action) -> Result<Job> {
         let steps = plan(&self.config, action)?;
-        if !self.config.config_path.join("flake.nix").is_file()
+        if self.config.config_kind() == crate::config::ConfigKind::Unknown
             && action != Action::Clean
             && action != Action::Rollback
         {
-            bail!("No flake.nix in {}", self.config.config_path.display());
+            bail!(
+                "No flake.nix or configuration.nix in {}",
+                self.config.config_path.display()
+            );
         }
         let mut inner = self.inner.lock().unwrap();
         if inner.active.is_some() {
@@ -337,9 +403,13 @@ fn execute(config: &Config, steps: Vec<Step>, mut log: File) -> Result<()> {
                 .collect::<Vec<_>>()
                 .join(" ")
         )?;
+        let dir;
         let status = Command::new(&step.program)
             .args(&step.args)
-            .current_dir(if config.config_path.is_dir() {
+            .current_dir(if let Some(cwd) = &step.cwd {
+                dir = cwd.clone();
+                &dir
+            } else if config.config_path.is_dir() {
                 &config.config_path
             } else {
                 &config.state_dir
@@ -364,7 +434,11 @@ fn execute(config: &Config, steps: Vec<Step>, mut log: File) -> Result<()> {
 }
 
 pub fn read_token(config: &Config) -> Result<String> {
-    let token = fs::read_to_string(config.token_path())
+    read_token_path(&config.token_path())
+}
+
+pub fn read_token_path(path: &std::path::Path) -> Result<String> {
+    let token = fs::read_to_string(path)
         .context("Cannot read access token. Is the yonix service running for this user?")?;
     let token = token.trim();
     if token.len() != 64 || !token.bytes().all(|b| b.is_ascii_hexdigit()) {

@@ -211,6 +211,107 @@ fn gateway_keeps_credentials_local_and_routes_single_hop() {
 }
 
 #[test]
+fn pairing_links_exchange_tokens_burn_codes_and_reject_replay() {
+    use std::os::unix::fs::PermissionsExt;
+    let temp = tempfile::tempdir().unwrap();
+    let initiator = config(temp.path(), "nas");
+    let joiner = config(temp.path(), "web");
+    let _initiator_process = spawn(&initiator);
+    let _joiner_process = spawn(&joiner);
+    let initiator_token = engine::read_token(&initiator).unwrap();
+    let joiner_token = engine::read_token(&joiner).unwrap();
+    let http = reqwest::blocking::Client::builder()
+        .no_proxy()
+        .build()
+        .unwrap();
+    // Minting requires the login token and returns only a one-time code.
+    assert_eq!(
+        http.post(format!("{}/api/pairings", initiator.base_url()))
+            .json(&json!({}))
+            .send()
+            .unwrap()
+            .status(),
+        401
+    );
+    let mint: Value = http
+        .post(format!("{}/api/pairings", initiator.base_url()))
+        .bearer_auth(&initiator_token)
+        .json(&json!({}))
+        .send()
+        .unwrap()
+        .json()
+        .unwrap();
+    let code = mint["code"].as_str().unwrap();
+    assert_eq!(code.len(), 32);
+    assert!(!mint.to_string().contains(&initiator_token));
+    // Server-side pairing state is a private file next to connections.json.
+    assert_eq!(
+        fs::metadata(initiator.state_dir.join("pairings.json"))
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777,
+        0o600
+    );
+    // Build the link the initiator would print: base64url(payload)#code.
+    let payload = yonix::pairing::PairPayload {
+        v: 1,
+        host: "nas".into(),
+        paths: vec![yonix::pairing::PathCandidate {
+            url: format!("{}/", initiator.base_url()),
+            role: yonix::pairing::PathRole::Direct,
+        }],
+    };
+    let link = yonix::pairing::encode_link(&payload, code).unwrap();
+    let parsed = yonix::pairing::parse_link(&link).unwrap();
+    assert_eq!(parsed.code, code);
+    // Redeem with no auth header: the code is the credential, the login
+    // token is the payload. The server burns the code and returns its own
+    // login token plus a stable id for both sides.
+    let redeem = |body: Value| {
+        http.post(format!("{}/api/pairings/redeem", initiator.base_url()))
+            .json(&body)
+            .send()
+            .unwrap()
+    };
+    let joiner_body = json!({
+        "code": code,
+        "host": "web",
+        "token": joiner_token,
+        "url": joiner.base_url(),
+    });
+    let reply: Value = redeem(joiner_body.clone()).json().unwrap();
+    assert_eq!(reply["host"], "nas");
+    assert_eq!(reply["token"], initiator_token);
+    assert!(reply["pair_id"].as_str().unwrap().starts_with("pair-"));
+    assert!(!reply.to_string().contains(code));
+    // The initiator stored the joiner's entry with the shared pair id.
+    let connections: Value = http
+        .get(format!("{}/api/connections", initiator.base_url()))
+        .bearer_auth(&initiator_token)
+        .send()
+        .unwrap()
+        .json()
+        .unwrap();
+    assert_eq!(connections.as_array().unwrap().len(), 1);
+    // Replay fails: the code burned on first use.
+    assert_eq!(redeem(joiner_body).status(), 401);
+    // Bad codes and payloads are rejected with 400/401, never 500.
+    assert_eq!(
+        redeem(
+            json!({"code": "zz", "host": "web", "token": joiner_token, "url": joiner.base_url()})
+        )
+        .status(),
+        400
+    );
+    assert_eq!(
+        redeem(json!({"code": code, "host": "web", "token": "zz", "url": joiner.base_url()}))
+            .status(),
+        400
+    );
+}
+
+#[test]
 fn browser_connections_are_verified_private_persistent_and_removable() {
     let temp = tempfile::tempdir().unwrap();
     let remote = config(temp.path(), "web");

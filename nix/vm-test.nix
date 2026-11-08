@@ -86,12 +86,29 @@ pkgs.testers.runNixOSTest {
     machine.succeed("test -e /run/yonix-bootloader-called")
     machine.succeed("su - operator -c 'yonix rollback --yes'")
     machine.succeed("su - operator -c 'yonix clean --yes'")
+    # Clean runs the retention GC (like the original yonix minus its
+    # destructive scratch/journals/prune steps); the log proves it ran.
+    clean_id = json.loads(machine.succeed("su - operator -c 'yonix history'"))[0]["id"]
+    assert "nix-collect-garbage --delete-older-than" in machine.succeed("su - operator -c 'yonix logs " + clean_id + "'")
+    # Legacy mode: only configuration.nix is present. Check/build would need
+    # an evaluatable legacy system (NIX_PATH/channels), which this offline VM
+    # cannot provide; that path is covered by the workflow test with fake
+    # binaries. Here assert detection, the flake-lock refusal, and the
+    # config-independent actions (rollback/clean use the same sudo helper).
+    machine.succeed("mv /home/operator/nixos/flake.nix /tmp/yonix-flake-backup")
+    machine.succeed("printf '%s\\n' '{ }' > /home/operator/nixos/configuration.nix")
+    machine.succeed("chown operator:users /home/operator/nixos/configuration.nix")
+    status = json.loads(machine.succeed("su - operator -c 'yonix status'"))
+    assert status["config_kind"] == "legacy", status
+    machine.fail("su - operator -c 'yonix update-inputs --yes'")
+    machine.succeed("su - operator -c 'yonix rollback --yes'")
+    machine.succeed("su - operator -c 'yonix clean --yes'")
     machine.fail("su - operator -c 'sudo -n id'")
     machine.succeed("systemctl restart yonix")
     machine.wait_for_unit("yonix.service")
     machine.wait_for_open_port(9847)
     history = json.loads(machine.succeed("su - operator -c 'yonix history'"))
-    assert len(history) == 5
+    assert len(history) == 8
     assert all(job["status"] == "succeeded" for job in history)
   '';
 }

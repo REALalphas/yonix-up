@@ -47,13 +47,21 @@ pub fn token_matches(expected: &str, supplied: &str) -> bool {
         == 0
 }
 
-pub fn valid_host(host: &str, address: std::net::Ipv4Addr) -> bool {
+pub fn valid_host(host: &str, address: std::net::IpAddr) -> bool {
+    // IPv6 Host headers arrive bracketed (`[::1]:9847`); strip the brackets
+    // before comparing or parsing. A bare address without a port is rejected.
     host.rsplit_once(':').is_some_and(|(name, port)| {
-        (matches!(name, "localhost" | "127.0.0.1")
+        let name = name
+            .strip_prefix('[')
+            .and_then(|inner| inner.strip_suffix(']'))
+            .unwrap_or(name);
+        (matches!(name, "localhost" | "127.0.0.1" | "::1")
             || name == address.to_string()
             || (address.is_unspecified()
-                && name.parse::<std::net::Ipv4Addr>().is_ok_and(|ip| {
-                    !ip.is_unspecified() && !ip.is_multicast() && !ip.is_broadcast()
+                && name.parse::<std::net::IpAddr>().is_ok_and(|ip| {
+                    !ip.is_unspecified()
+                        && !matches!(ip, std::net::IpAddr::V4(v4) if v4.is_multicast() || v4.is_broadcast())
+                        && !matches!(ip, std::net::IpAddr::V6(v6) if v6.is_multicast())
                 })))
             && port.parse::<u16>().is_ok_and(|p| p != 0)
     })
@@ -83,7 +91,10 @@ async fn protect(State(app): State<App>, request: Request, next: Next) -> Respon
     {
         return error(StatusCode::FORBIDDEN, "Peer forwarding is single-hop").into_response();
     }
-    if request.uri().path().starts_with("/api/") {
+    // The redeem endpoint authenticates by pairing code (see `redeem_pairing`),
+    // never by the login token: the joiner proves the out-of-band secret
+    // without knowing any token yet. Minting stays token-authenticated.
+    if request.uri().path().starts_with("/api/") && request.uri().path() != "/api/pairings/redeem" {
         let token = headers
             .get(header::AUTHORIZATION)
             .and_then(|v| v.to_str().ok())
@@ -108,6 +119,8 @@ pub fn router(engine: Engine, token: String) -> Router {
         token: Arc::new(token),
     };
     Router::new()
+        .route("/api/pairings", post(mint_pairing))
+        .route("/api/pairings/redeem", post(redeem_pairing))
         .route("/api/connections", get(connections).post(add_connection))
         .route("/api/connections/check", post(check_connection))
         .route("/api/connections/{id}/check", post(check_saved_connection))
@@ -187,10 +200,11 @@ pub async fn run(config: Config) -> Result<()> {
     let engine = Engine::open(config.clone())?;
     let token = crate::engine::ensure_token(&config)?;
     let listener = tokio::net::TcpListener::bind((config.listen_address, config.port)).await?;
-    eprintln!(
-        "Yonix listening on http://{}:{}",
-        config.listen_address, config.port
-    );
+    let display = match config.listen_address {
+        std::net::IpAddr::V4(address) => address.to_string(),
+        std::net::IpAddr::V6(address) => format!("[{address}]"),
+    };
+    eprintln!("Yonix listening on http://{display}:{}", config.port);
     axum::serve(listener, router(engine, token))
         .with_graceful_shutdown(async {
             let mut terminate =
@@ -329,6 +343,108 @@ async fn forward(app: App, host: String, path: String, body: Option<Start>) -> R
         )
         .into_response(),
     }
+}
+
+/// Mint a one-time pairing code (token-authenticated). The response carries
+/// only the code: the caller builds `base64url(payload)#code` locally, so the
+/// login token never leaves the daemon.
+async fn mint_pairing(State(app): State<App>) -> Result<Json<serde_json::Value>, ApiError> {
+    let code = app
+        .engine
+        .connections
+        .mint_pairing()
+        .map_err(|e| error(StatusCode::CONFLICT, e))?;
+    Ok(Json(serde_json::json!({"code": code})))
+}
+
+#[derive(Deserialize)]
+struct RedeemRequest {
+    code: String,
+    /// Joiner-side facts the initiator stores with its own connection entry.
+    host: String,
+    token: String,
+    url: String,
+}
+
+#[derive(Serialize)]
+struct RedeemResponse {
+    host: String,
+    version: String,
+    token: String,
+    url: String,
+    pair_id: String,
+}
+
+/// Redeem a pairing code. Authenticated by the one-time code, not by any
+/// login token: the joiner proves the out-of-band secret and offers its own
+/// login token in the same call. The server burns the code first, then
+/// returns its own login token so both sides store the mirrored entry.
+async fn redeem_pairing(
+    State(app): State<App>,
+    Json(body): Json<RedeemRequest>,
+) -> Result<Json<RedeemResponse>, ApiError> {
+    let code = body.code.trim().to_string();
+    crate::pairing::validate_code(&code).map_err(|e| error(StatusCode::BAD_REQUEST, e))?;
+    let joiner_host = body.host.trim().to_string();
+    if joiner_host.is_empty()
+        || joiner_host.len() > 64
+        || !joiner_host
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"_-".contains(&b))
+    {
+        return Err(error(StatusCode::BAD_REQUEST, "Invalid joiner host label"));
+    }
+    if body.token.len() != 64 || !body.token.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err(error(StatusCode::BAD_REQUEST, "Invalid joiner token"));
+    }
+    let joiner_url = body.url.trim().trim_end_matches('/').to_string();
+    crate::peers::validate_peer_url(&joiner_url).map_err(|e| error(StatusCode::BAD_REQUEST, e))?;
+    // Burn before doing anything else: a valid code works exactly once even
+    // if the rest of the redeem fails afterwards.
+    if !app
+        .engine
+        .connections
+        .redeem_local(&code)
+        .map_err(|e| error(StatusCode::INTERNAL_SERVER_ERROR, e))?
+    {
+        return Err(error(
+            StatusCode::UNAUTHORIZED,
+            "Unknown or expired pairing code",
+        ));
+    }
+    let pair_id = format!(
+        "pair-{}",
+        now_hex_id().map_err(|e| error(StatusCode::INTERNAL_SERVER_ERROR, e))?
+    );
+    app.engine
+        .connections
+        .add_paired(
+            joiner_host.clone(),
+            joiner_url.clone(),
+            body.token.clone(),
+            pair_id.clone(),
+        )
+        .map_err(|e| error(StatusCode::CONFLICT, e))?;
+    let token = app
+        .engine
+        .connections
+        .local_token()
+        .map_err(|e| error(StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    let status = app.engine.status();
+    Ok(Json(RedeemResponse {
+        host: status.host,
+        version: status.version,
+        token,
+        url: app.engine.config.base_url(),
+        pair_id,
+    }))
+}
+
+fn now_hex_id() -> anyhow::Result<String> {
+    use std::io::Read;
+    let mut bytes = [0u8; 16];
+    std::fs::File::open("/dev/urandom")?.read_exact(&mut bytes)?;
+    Ok(bytes.iter().map(|b| format!("{b:02x}")).collect())
 }
 
 async fn connections(State(app): State<App>) -> Json<Vec<crate::peers::Connection>> {

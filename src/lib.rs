@@ -4,5 +4,6 @@ pub mod engine;
 #[cfg(feature = "gui")]
 pub mod gui;
 pub mod i18n;
+pub mod pairing;
 pub mod peers;
 pub mod server;

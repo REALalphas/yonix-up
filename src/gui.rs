@@ -376,7 +376,15 @@ fn build_window(
                 }
                 Ok(snapshot) => {
                     last_error.clear();
-                    host.set_subtitle(&snapshot.status.host);
+                    host.set_subtitle(&format!(
+                        "{} · {}",
+                        snapshot.status.host,
+                        match snapshot.status.config_kind {
+                            crate::config::ConfigKind::Flake => lang.text("envFlake"),
+                            crate::config::ConfigKind::Legacy => lang.text("envLegacy"),
+                            crate::config::ConfigKind::Unknown => lang.text("missingConfiguration"),
+                        }
+                    ));
                     source.set_subtitle(&snapshot.status.config_path.to_string_lossy());
                     current.set_subtitle(
                         &snapshot
@@ -394,7 +402,10 @@ fn build_window(
                     for (action, button) in &buttons {
                         button.set_sensitive(
                             snapshot.status.active.is_none()
-                                && (!action.privileged() || snapshot.status.system_changes_enabled),
+                                && (!action.privileged() || snapshot.status.system_changes_enabled)
+                                && (*action != Action::UpdateInputs
+                                    || snapshot.status.config_kind
+                                        == crate::config::ConfigKind::Flake),
                         );
                         if action.privileged() && !snapshot.status.system_changes_enabled {
                             button.set_tooltip_text(Some(lang.text("enableChanges")));

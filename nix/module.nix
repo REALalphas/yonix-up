@@ -18,7 +18,16 @@ let
     set -eu
     if [ "$#" -ne 1 ]; then exit 64; fi
     case "$1" in
-      switch) set -- ${pkgs.nixos-rebuild}/bin/nixos-rebuild switch --flake ${lib.escapeShellArg flakeRef} --no-write-lock-file ;;
+      switch)
+        if [ -f ${lib.escapeShellArg cfg.configPath}/flake.nix ]; then
+          set -- ${pkgs.nixos-rebuild}/bin/nixos-rebuild switch --flake ${lib.escapeShellArg flakeRef} --no-write-lock-file
+        elif [ -f ${lib.escapeShellArg cfg.configPath}/configuration.nix ]; then
+          set -- ${pkgs.nixos-rebuild}/bin/nixos-rebuild switch --no-flake -I nixos-config=${lib.escapeShellArg cfg.configPath}/configuration.nix
+        else
+          echo "No flake.nix or configuration.nix in ${lib.escapeShellArg cfg.configPath}" >&2
+          exit 64
+        fi
+        ;;
       rollback) set -- ${pkgs.nixos-rebuild}/bin/nixos-rebuild switch --rollback --no-reexec ;;
       clean)
         # GC first, then a soft btrfs rebalance (usage=5) on every mounted btrfs.
@@ -88,7 +97,7 @@ in
     configPath = mkOption {
       type = types.strMatching "/.*";
       default = "/etc/nixos";
-      description = "Absolute path to a writable NixOS flake checkout. Keep it on a local filesystem.";
+      description = "Absolute path to a writable NixOS configuration: a flake checkout (flake.nix) or a legacy directory (configuration.nix). Flake mode takes precedence when both files are present. Keep it on a local filesystem.";
     };
     sourceMode = mkOption {
       type = types.enum [
@@ -96,7 +105,7 @@ in
         "path"
       ];
       default = "git";
-      description = "Git mode uses the Git-visible flake. Path mode includes local untracked and ignored files, matching checkouts with an ignored config.nix. Local source files can enter the world-readable Nix store; do not keep secrets in that checkout.";
+      description = "Flake mode only; ignored for legacy configuration.nix setups. Git mode uses the Git-visible flake. Path mode includes local untracked and ignored files, matching checkouts with an ignored config.nix. Local source files can enter the world-readable Nix store; do not keep secrets in that checkout.";
     };
     host = mkOption {
       type = types.strMatching "[a-zA-Z0-9_-]+";
@@ -258,6 +267,7 @@ in
       stopIfChanged = false;
       path = [
         pkgs.nix
+        pkgs.nixos-rebuild
         pkgs.git
         pkgs.coreutils
         "/run/wrappers"

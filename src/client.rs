@@ -52,6 +52,38 @@ impl Client {
             .json()
             .map_err(Into::into)
     }
+    pub fn post_json(&self, path: &str, body: &serde_json::Value) -> Result<serde_json::Value> {
+        let response = self
+            .http
+            .post(format!("{}{path}", self.base))
+            .bearer_auth(&self.token)
+            .json(body)
+            .send()
+            .context("Cannot reach yonix. Start the service or check the SSH tunnel.")?;
+        if !response.status().is_success() {
+            bail!("{}", response.text()?);
+        }
+        Ok(response.json()?)
+    }
+    pub fn post_no_auth(
+        base: &str,
+        path: &str,
+        body: &serde_json::Value,
+    ) -> Result<serde_json::Value> {
+        let http = Http::builder()
+            .no_proxy()
+            .timeout(Duration::from_secs(10))
+            .build()?;
+        let response = http
+            .post(format!("{}{path}", base.trim_end_matches('/')))
+            .json(body)
+            .send()
+            .context("Cannot reach the pairing host. Check its address and service.")?;
+        if !response.status().is_success() {
+            bail!("{}", response.text()?);
+        }
+        Ok(response.json()?)
+    }
     pub fn status(&self) -> Result<Status> {
         self.get("/api/status")
     }

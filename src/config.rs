@@ -13,11 +13,30 @@ pub struct Config {
     pub host: String,
     pub source_mode: String,
     pub port: u16,
-    pub listen_address: Ipv4Addr,
+    #[serde(default = "default_listen_address")]
+    pub listen_address: IpAddr,
     pub state_dir: PathBuf,
     pub privileged_helper: Option<PathBuf>,
     pub peers: Vec<crate::peers::Peer>,
     pub cache: Option<Cache>,
+}
+
+/// How the environment in `config_path` is managed: a flake (`flake.nix`)
+/// or a legacy non-flake configuration (`configuration.nix`).
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum ConfigKind {
+    /// `flake.nix` is present; takes precedence when both files exist.
+    #[default]
+    Flake,
+    /// Only `configuration.nix` is present.
+    Legacy,
+    /// Neither file is present; only config-independent actions may run.
+    Unknown,
+}
+
+fn default_listen_address() -> IpAddr {
+    IpAddr::V4(Ipv4Addr::LOCALHOST)
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -43,7 +62,7 @@ impl Default for Config {
                 .into(),
             source_mode: "git".into(),
             port: 9847,
-            listen_address: Ipv4Addr::LOCALHOST,
+            listen_address: default_listen_address(),
             state_dir: state.join("yonix"),
             privileged_helper: None,
             peers: Vec::new(),
@@ -79,8 +98,17 @@ impl Config {
         if !matches!(self.source_mode.as_str(), "git" | "path") {
             bail!("source_mode must be 'git' or 'path'");
         }
-        if self.listen_address.is_multicast() || self.listen_address.is_broadcast() {
-            bail!("listen_address must be a unicast IPv4 address or 0.0.0.0");
+        match self.listen_address {
+            IpAddr::V4(address) => {
+                if address.is_multicast() || address.is_broadcast() {
+                    bail!("listen_address must be a unicast IPv4 address or 0.0.0.0");
+                }
+            }
+            IpAddr::V6(address) => {
+                if address.is_multicast() {
+                    bail!("listen_address must be a unicast IPv6 address or ::");
+                }
+            }
         }
         if self.port == 0 {
             bail!("port must not be zero");
@@ -118,11 +146,26 @@ impl Config {
     pub fn base_url(&self) -> String {
         // A wildcard is a bind address, not a destination for local clients.
         let address = if self.listen_address.is_unspecified() {
-            Ipv4Addr::LOCALHOST
+            IpAddr::V4(Ipv4Addr::LOCALHOST)
         } else {
             self.listen_address
         };
-        format!("http://{address}:{}", self.port)
+        match address {
+            IpAddr::V4(address) => format!("http://{address}:{}", self.port),
+            IpAddr::V6(address) => format!("http://[{address}]:{}", self.port),
+        }
+    }
+    /// Detect the environment type from the files in `config_path`.
+    /// A present `flake.nix` wins when both files exist; `source_mode`
+    /// only applies to the flake case and is ignored for legacy configs.
+    pub fn config_kind(&self) -> ConfigKind {
+        if self.config_path.join("flake.nix").is_file() {
+            ConfigKind::Flake
+        } else if self.config_path.join("configuration.nix").is_file() {
+            ConfigKind::Legacy
+        } else {
+            ConfigKind::Unknown
+        }
     }
     pub fn flake_source(&self) -> String {
         format!(

@@ -38,7 +38,21 @@ Include its module in your `nixosSystem` modules and configure it:
 
 The configured user must be able to read the checkout, and write it to update `flake.lock`. Private Git inputs need credentials accessible to the relevant process. Activation runs the fixed rebuild helper as root; root may need its own access to private inputs.
 
-`sourceMode = "git"` is the default: Nix sees files tracked by Git. Use `"path"` for a local checkout with ignored or untracked configuration files, as in the original yonix workflow. Path mode can put local source files into the world-readable Nix store, so keep secrets outside the checkout. It does not stage files or change Git ignore rules.
+`sourceMode = "git"` is the default: Nix sees files tracked by Git. Use `"path"` for a local checkout with ignored or untracked configuration files, as in the original yonix workflow. Path mode can put local source files into the world-readable Nix store, so keep secrets outside the checkout. It does not stage files or change Git ignore rules. `sourceMode` applies to flake mode only and is ignored for legacy configurations.
+
+## Legacy (non-flake) configurations
+
+Yonix detects the environment type from `configPath` at runtime: `flake.nix` present means **flake** (it wins when both files exist), otherwise `configuration.nix` means **legacy**, otherwise **unknown**. No configuration change or restart flag is needed; the same package serves both modes. The detected type is shown as a badge in the desktop window and the browser panel (`yonix status` reports it as `config_kind`).
+
+| Action | Flake | Legacy |
+|---|---|---|
+| Check | `nix eval …drvPath` | `nixos-rebuild dry-build --no-flake -I nixos-config=…/configuration.nix` |
+| Build | `nix build … --out-link <state>/result` | `nixos-rebuild build …` (the `result` symlink lands in the state directory, same GC root) |
+| Diff | build + `nix store diff-closures` | same shape, over the legacy build |
+| Update inputs | `nix flake update` | refused: legacy configurations have no `flake.lock`; manage channels outside Yonix |
+| Switch / Rollback / Clean | fixed sudo helper | same helper; switch uses `--no-flake -I nixos-config=…`, rollback and clean are config-independent |
+
+`unknown` environments (neither file present) allow only rollback and clean, like a missing `flake.nix` before.
 
 On a server without GTK:
 
@@ -66,7 +80,7 @@ yonix web                # open the browser panel
 yonix token              # print the private token for browser sign-in
 ```
 
-`yonix update` is an alias for `switch`. Other old shortcuts and destructive flags are deliberately not carried over. `check` evaluates the selected system derivation; it is not a replacement for all checks in `nix flake check`. `diff` compares package closures, not service configuration. Cleanup uses `nix-collect-garbage --delete-older-than`, then a soft `btrfs balance start -musage=5` / `-dusage=5` on each mounted btrfs filesystem (deduped by UUID, failures ignored); it does not delete `/tmp`, journal files or GC roots manually. Generation age is a time-based policy, not a guarantee of a minimum number of rollback generations.
+`yonix update` is an alias for `switch`. Other old shortcuts and destructive flags are deliberately not carried over. `check` evaluates the selected system (flake derivation path, or legacy dry-build); it is not a replacement for all checks in `nix flake check`. `diff` compares package closures, not service configuration. Cleanup uses `nix-collect-garbage --delete-older-than`, then a soft `btrfs balance start -musage=5` / `-dusage=5` on each mounted btrfs filesystem (deduped by UUID, failures ignored); it does not delete `/tmp`, journal files or GC roots manually. The last `<state_dir>/result` symlink is intentionally kept as a GC root for the most recent build. Generation age is a time-based policy, not a guarantee of a minimum number of rollback generations.
 
 The desktop and browser interfaces support English, Russian, German, French, Spanish, Portuguese (Brazil), Italian, Ukrainian, Polish, Turkish, Simplified Chinese, Japanese and Korean. The desktop follows the system's preferred languages, defaulting to English if none are supported. The browser follows its preferred languages by default and offers a selector in settings; its choice is saved in local storage for that origin. CLI output, service errors and command logs retain their original language.
 
@@ -137,7 +151,7 @@ Use `yonix-headless` to avoid GTK/libadwaita on servers. Release builds use Carg
 
 ## Layout
 
-- `src/engine.rs`: command plans, serialized jobs, logs and persistence.
+- `src/engine.rs`: command plans (flake and legacy), serialized jobs, logs and persistence.
 - `src/server.rs`: local/LAN API, authentication and embedded web assets.
 - `src/client.rs`: shared CLI/desktop client.
 - `src/gui.rs`: native libadwaita interface; networking stays off the GTK thread.

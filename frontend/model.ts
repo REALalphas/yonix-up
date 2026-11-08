@@ -7,17 +7,20 @@ export interface Job {
     finished?: number | null;
     error?: string;
 }
+export type ConfigKind = 'flake' | 'legacy' | 'unknown';
 export interface Status {
     host: string;
     config_path: string;
     current_system: string | null;
     active: string | null;
     system_changes_enabled: boolean;
+    /** Environment type. Older (flake-only) peers omit it; treat as flake. */
+    config_kind?: ConfigKind;
     cache?: {url:string;public_key:string|null}|null;
 }
 export const actionKeys: Record<Action, string> = { check: 'actionCheck', build: 'actionBuild', diff: 'actionDiff', switch: 'actionSwitch', 'update-inputs': 'actionUpdate', rollback: 'actionRollback', clean: 'actionClean' };
 export const confirmations: Partial<Record<Action, string>> = { switch: 'confirmSwitch', 'update-inputs': 'confirmUpdate', rollback: 'confirmRollback', clean: 'confirmClean' };
-export function allowed(action: Action, status: Status | null, pending: boolean) { return !!status && !status.active && !pending && (status.system_changes_enabled || !['switch', 'rollback', 'clean'].includes(action)); }
+export function allowed(action: Action, status: Status | null, pending: boolean) { return !!status && !status.active && !pending && (status.system_changes_enabled || !['switch', 'rollback', 'clean'].includes(action)) && (action !== 'update-inputs' || (status.config_kind ?? 'flake') === 'flake'); }
 export class ApiError extends Error {
     constructor(public readonly status: number, message: string) {
         super(message);

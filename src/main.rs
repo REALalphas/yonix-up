@@ -1,4 +1,4 @@
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
 use std::{
     io::{self, Write},
@@ -61,6 +61,32 @@ enum Commands {
     Logs { id: String },
     /// Print the private API token for browser sign-in
     Token,
+    /// Generate a two-way pairing link: base64url(payload)#PAIRING_CODE
+    Pair {
+        /// Explicit initiator origin, e.g. http://10.0.0.1:9847
+        #[arg(long)]
+        origin: Option<String>,
+        /// Additional fallback path (repeatable): --extra-path <url> --extra-path-role <role>
+        #[arg(long)]
+        extra_path: Vec<String>,
+        /// Role for each --extra-path, in order (default: direct)
+        #[arg(long)]
+        extra_path_role: Vec<String>,
+        /// Print machine-readable JSON instead of the bare link
+        #[arg(long)]
+        json: bool,
+    },
+    /// Redeem a pairing link or bare code and link both hosts
+    PairAccept {
+        /// Full link (base64url#code) or a bare 32-hex code (manual address top-up)
+        link: String,
+        /// Initiator address when redeeming a bare code
+        #[arg(long)]
+        origin: Option<String>,
+        /// Label for the saved connection
+        #[arg(long)]
+        label: Option<String>,
+    },
     /// Open the browser panel
     Web,
     /// Print an example configuration, without changing any files
@@ -79,6 +105,175 @@ fn confirm(message: &str, yes: bool) -> Result<()> {
     }
     Ok(())
 }
+fn pairing_role(text: &str) -> Result<yonix::pairing::PathRole> {
+    match text.to_ascii_lowercase().as_str() {
+        "direct" => Ok(yonix::pairing::PathRole::Direct),
+        "dns" => Ok(yonix::pairing::PathRole::Dns),
+        "ssh" => Ok(yonix::pairing::PathRole::Ssh),
+        "public" => Ok(yonix::pairing::PathRole::Public),
+        "relay" => Ok(yonix::pairing::PathRole::Relay),
+        other => bail!("Unknown path role '{other}': direct, dns, ssh, public or relay"),
+    }
+}
+
+fn pair_command(
+    config: &Config,
+    origin: Option<String>,
+    extra_paths: Vec<String>,
+    extra_roles: Vec<String>,
+    json: bool,
+) -> Result<()> {
+    use yonix::pairing::{PairPayload, PathCandidate, PathRole};
+    if extra_roles.len() > extra_paths.len() {
+        bail!("More --extra-path-role values than --extra-path values");
+    }
+    // Mint a one-time server-side code: the daemon owns expiry and single
+    // use, so a copied link cannot outlive or replay the pairing.
+    let client = Client::new(config, None, None)?;
+    let code: String = client
+        .post_json("/api/pairings", &serde_json::json!({}))?
+        .get("code")
+        .and_then(|code| code.as_str())
+        .context("Pairing server did not return a code")?
+        .into();
+    let primary = origin.unwrap_or_else(|| config.base_url());
+    let mut paths = vec![PathCandidate {
+        url: primary,
+        role: PathRole::Direct,
+    }];
+    for (index, url) in extra_paths.iter().enumerate() {
+        let role = extra_roles
+            .get(index)
+            .map(|role| pairing_role(role))
+            .transpose()?
+            .unwrap_or(PathRole::Direct);
+        paths.push(PathCandidate {
+            url: url.clone(),
+            role,
+        });
+    }
+    let payload = PairPayload {
+        v: 1,
+        host: config.host.clone(),
+        paths,
+    };
+    let link = yonix::pairing::encode_link(&payload, &code)?;
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "link": link,
+                "code": code,
+                "host": payload.host,
+                "paths": payload.paths,
+            }))?
+        );
+    } else {
+        println!("{link}");
+    }
+    Ok(())
+}
+
+fn pair_accept_command(
+    config: &Config,
+    link: String,
+    origin: Option<String>,
+    label: Option<String>,
+) -> Result<()> {
+    use yonix::pairing::PathRole;
+    let parsed = yonix::pairing::parse_link(&link)?;
+    let mut paths: Vec<(String, PathRole)> = parsed
+        .payload
+        .paths
+        .iter()
+        .map(|path| (path.url.clone(), path.role))
+        .collect();
+    if paths.is_empty() {
+        let Some(origin) = origin else {
+            bail!(
+                "Bare code {}: pass --origin <url> to top up the initiator address by hand",
+                parsed.code
+            );
+        };
+        paths.push((origin, PathRole::Direct));
+    }
+    let own_token = yonix::engine::read_token(config)?;
+    let own_base = config.base_url().trim_end_matches('/').to_string();
+    let mut failures: Vec<String> = Vec::new();
+    for (url, role) in &paths {
+        // Relay paths parse for display but never carry pairing traffic until
+        // a relay review lands; skip them instead of failing the whole link.
+        if *role == PathRole::Relay {
+            failures.push(format!("{url}: relay paths are not dialed yet"));
+            continue;
+        }
+        // Public paths are reachable but untrusted: ask explicitly.
+        if *role == PathRole::Public {
+            confirm(
+                &format!("Path {url} is a public address. Pair over it anyway?"),
+                false,
+            )?;
+        }
+        let dial = match yonix::pairing::resolve_checked(url, *role) {
+            Ok(dial) => dial,
+            Err(error) => {
+                failures.push(format!("{url}: {error:#}"));
+                continue;
+            }
+        };
+        for candidate in dial {
+            match Client::post_no_auth(
+                &candidate,
+                "/api/pairings/redeem",
+                &serde_json::json!({
+                    "code": parsed.code,
+                    "host": config.host,
+                    "token": own_token,
+                    "url": own_base,
+                }),
+            ) {
+                Ok(reply) => {
+                    let pair_id = reply
+                        .get("pair_id")
+                        .and_then(|id| id.as_str())
+                        .context("Pairing server did not return a pair id")?;
+                    let peer_host = reply
+                        .get("host")
+                        .and_then(|host| host.as_str())
+                        .unwrap_or(parsed.payload.host.as_str());
+                    let peer_token = reply
+                        .get("token")
+                        .and_then(|token| token.as_str())
+                        .context("Pairing server did not return a token")?;
+                    let name = label.clone().unwrap_or_else(|| {
+                        if peer_host.is_empty() {
+                            "peer".into()
+                        } else {
+                            peer_host.into()
+                        }
+                    });
+                    let local = Client::new(config, None, None)?;
+                    // Persist via the daemon so both sides agree on the
+                    // pairing id and credentials live in the private store.
+                    local.post_json(
+                        "/api/connections",
+                        &serde_json::json!({
+                            "label": name,
+                            "url": url,
+                            "token": peer_token,
+                            "pair_id": pair_id,
+                        }),
+                    )?;
+                    println!("Paired with {peer_host} via {url} (pair {pair_id})");
+                    return Ok(());
+                }
+                Err(error) => failures.push(format!("{candidate}: {error:#}")),
+            }
+        }
+    }
+    bail!("No pairing path worked:\n  {}", failures.join("\n  "));
+}
+
 fn operation(client: Client, action: Action) -> Result<()> {
     let job = client.start(action, true)?;
     println!("Started {} · {}", action.name(), job.id);
@@ -116,6 +311,23 @@ fn main() -> Result<()> {
     if matches!(command, Commands::Token) {
         println!("{}", yonix::engine::read_token(&config)?);
         return Ok(());
+    }
+    if let Commands::Pair {
+        origin,
+        extra_path,
+        extra_path_role,
+        json,
+    } = command
+    {
+        return pair_command(&config, origin, extra_path, extra_path_role, json);
+    }
+    if let Commands::PairAccept {
+        link,
+        origin,
+        label,
+    } = command
+    {
+        return pair_accept_command(&config, link, origin, label);
     }
     let client = Client::new(&config, args.url.clone(), args.token_file)?;
     match command {
