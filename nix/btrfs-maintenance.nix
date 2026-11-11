@@ -3,6 +3,8 @@
   util-linux,
   gawk,
   btrfs-progs,
+  reserveBytes ? 8589934592,
+  sysfsRoot ? "/sys/fs/btrfs",
 }:
 writeShellScript "yonix-btrfs-maintenance" ''
   set -euo pipefail
@@ -20,15 +22,20 @@ writeShellScript "yonix-btrfs-maintenance" ''
     exit 1
   fi
   mounts=$(printf '%s\n' "$mounts" | ${gawk}/bin/awk '
-    $2 == "btrfs" && $4 !~ /(^|,)ro(,|$)/ && !seen[$3]++ {print $1}
+    $2 == "btrfs" && $4 !~ /(^|,)ro(,|$)/ && !seen[$3]++ {print $1, $3}
   ')
 
   balance() {
     printf '$ btrfs balance start %s %s\n' "$*" "$mount"
-    ${btrfs-progs}/bin/btrfs balance start "$@" "$mount"
+    if ! ${btrfs-progs}/bin/btrfs balance start "$@" "$mount"; then
+      echo "Btrfs $mount: balance failed; file-level free space does not guarantee room for metadata relocation." >&2
+      printf 'Inspect: btrfs filesystem usage --raw %q; journalctl -k -b\n' "$mount" >&2
+      echo "If relocation fails with ENOSPC, restore allocation workspace before retrying; increasing limit or deleting small files may not help." >&2
+      return 1
+    fi
   }
   space() {
-    local usage numbers
+    local usage numbers metadata_dir counter value total used committed headroom minimum_headroom reserve
     if ! usage=$(${btrfs-progs}/bin/btrfs filesystem usage --raw "$mount"); then
       echo "Cannot inspect Btrfs allocation for $mount." >&2
       return 1
@@ -45,17 +52,53 @@ writeShellScript "yonix-btrfs-maintenance" ''
       return 1
     fi
     read -r device_size unallocated <<< "$numbers"
+    # df and metadata used alone miss space already committed to transactions.
+    # Read the same space_info counters that the allocator uses, including
+    # bytes_may_use (which includes the global reserve).
+    metadata_dir="${sysfsRoot}/$uuid/allocation/metadata"
+    total=0 used=0 committed=0
+    for counter in total_bytes bytes_used bytes_reserved bytes_pinned bytes_may_use bytes_readonly; do
+      if ! IFS= read -r value < "$metadata_dir/$counter"; then
+        echo "Cannot read Btrfs metadata counter $counter for $mount." >&2
+        return 1
+      fi
+      if [[ ! "$value" =~ ^[0-9]+$ ]] || [ "''${#value}" -gt 18 ]; then
+        echo "Cannot parse Btrfs metadata counter $counter for $mount." >&2
+        return 1
+      fi
+      value=$((10#$value))
+      case "$counter" in
+        total_bytes) total=$value ;;
+        bytes_used) used=$value; committed=$((committed + value)) ;;
+        *) committed=$((committed + value)) ;;
+      esac
+    done
+    if [ "$total" -le 0 ] || [ "$used" -gt "$total" ]; then
+      echo "Invalid Btrfs metadata capacity for $mount." >&2
+      return 1
+    fi
+    headroom=$((total - committed))
+    minimum_headroom=$((total / 8))
+    [ "$minimum_headroom" -le 268435456 ] || minimum_headroom=268435456
+    reserve=${toString reserveBytes}
+    if [ "$((used * 100 / total))" -ge 85 ] || [ "$headroom" -lt "$minimum_headroom" ]; then
+      echo "WARNING: Btrfs $mount: metadata pressure (used=$used, committed=$committed, total=$total, headroom=$headroom bytes)." >&2
+      # Leave room for more metadata chunks while writes are still possible.
+      reserve=$((reserve * 2))
+    else
+      echo "Btrfs $mount: metadata headroom $headroom bytes (used=$used, total=$total)."
+    fi
     # Reserve physical space for new chunks, including metadata. File-level
     # free space alone is not sufficient to avoid ENOSPC on fully allocated FSs.
     # Small filesystems still need room for DUP metadata plus system chunks.
     target=$((device_size / 4))
-    [ "$target" -le 2147483648 ] || target=2147483648
+    [ "$target" -le "$reserve" ] || target=$reserve
     [ "$target" -gt 0 ] || target=1
     echo "Btrfs $mount: $unallocated bytes unallocated; reserve target $target bytes."
   }
   maintain() {
     # Empty chunks need no relocation workspace. Free data first, then empty
-    # metadata; postpone relocation of used metadata until reserve recovery.
+    # metadata. Keep allocated metadata space rather than compacting it.
     balance -dusage=0 || return 1
     balance -musage=0 || return 1
     space || return 1
@@ -81,9 +124,6 @@ writeShellScript "yonix-btrfs-maintenance" ''
       fi
     fi
     balance "-dusage=5,limit=$limit" || return 1
-    if [ "$limit" -gt 1 ]; then
-      balance "-musage=5,limit=$limit" || return 1
-    fi
     # A successful balance command can relocate zero chunks. Verify the
     # allocation reserve instead of treating its exit status as recovery.
     space || return 1
@@ -94,7 +134,7 @@ writeShellScript "yonix-btrfs-maintenance" ''
   }
 
   failed=0
-  while IFS= read -r mount; do
+  while read -r mount uuid; do
     [ -n "$mount" ] || continue
     # findmnt --raw hex-escapes unsafe characters, including spaces.
     mount=$(printf '%b' "$mount")

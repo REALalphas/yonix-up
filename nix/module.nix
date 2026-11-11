@@ -14,7 +14,9 @@ let
     mkIf
     ;
   flakeRef = "${lib.optionalString (cfg.sourceMode == "path") "path:"}${cfg.configPath}#${cfg.host}";
-  btrfsMaintenance = pkgs.callPackage ./btrfs-maintenance.nix { };
+  btrfsMaintenance = pkgs.callPackage ./btrfs-maintenance.nix {
+    reserveBytes = cfg.btrfs.reserveGiB * 1024 * 1024 * 1024;
+  };
   clean = pkgs.callPackage ./clean.nix {
     inherit btrfsMaintenance;
     keepGenerations = cfg.keepGenerations;
@@ -187,6 +189,11 @@ in
       type = types.strMatching "[1-9][0-9]*d";
       default = "14d";
       description = "Age of generations to retain during explicit cleanup. No automatic cleanup is scheduled.";
+    };
+    btrfs.reserveGiB = mkOption {
+      type = types.ints.between 1 128;
+      default = 8;
+      description = "Unallocated Btrfs device space to recover before switch/update and after clean. Doubled under metadata pressure and capped at 25% of filesystem device size. This is a checked target, not a hard reservation; no background cleanup is scheduled.";
     };
   };
   config = mkIf cfg.enable {
