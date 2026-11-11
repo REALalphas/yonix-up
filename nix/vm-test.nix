@@ -71,6 +71,7 @@ pkgs.testers.runNixOSTest {
     machine.succeed("su - operator -c 'yonix check'")
     machine.succeed("su - operator -c 'yonix build'")
     machine.succeed("test $(cat /var/lib/yonix/result) = tested")
+    build_root = machine.succeed("readlink -f /var/lib/yonix/result").strip()
     # Exercise the real rebuild/activation path using this VM's existing system closure.
     # A separate profile entry gives rollback a valid previous generation without building another OS.
     current = machine.succeed("readlink -f /run/current-system").strip()
@@ -93,6 +94,8 @@ pkgs.testers.runNixOSTest {
     clean_id = json.loads(machine.succeed("su - operator -c 'yonix history'"))[0]["id"]
     assert "nix-collect-garbage --delete-older-than" in machine.succeed("su - operator -c 'yonix logs " + clean_id + "'")
     assert "Btrfs maintenance (clean)" in machine.succeed("su - operator -c 'yonix logs " + clean_id + "'")
+    machine.succeed("test $(readlink -f /var/lib/yonix/result) = " + build_root)
+    machine.succeed("test $(cat /var/lib/yonix/result) = tested")
     # Legacy mode: only configuration.nix is present. Check/build would need
     # an evaluatable legacy system (NIX_PATH/channels), which this offline VM
     # cannot provide; that path is covered by the workflow test with fake
@@ -104,6 +107,9 @@ pkgs.testers.runNixOSTest {
     status = json.loads(machine.succeed("su - operator -c 'yonix status'"))
     assert status["config_kind"] == "legacy", status
     machine.fail("su - operator -c 'yonix update-inputs --yes'")
+    # The first rollback selected generation 1. Select the newer system again
+    # so this independent legacy rollback has an older generation to select.
+    machine.succeed("nix-env --profile /nix/var/nix/profiles/system --set " + current)
     machine.succeed("su - operator -c 'yonix rollback --yes'")
     machine.succeed("su - operator -c 'yonix clean --yes'")
     machine.fail("su - operator -c 'sudo -n id'")
@@ -111,7 +117,10 @@ pkgs.testers.runNixOSTest {
     machine.wait_for_unit("yonix.service")
     machine.wait_for_open_port(9847)
     history = json.loads(machine.succeed("su - operator -c 'yonix history'"))
-    assert len(history) == 8
+    # Legacy update-inputs is rejected before a job is created.
+    assert sorted(job["action"] for job in history) == sorted([
+        "check", "build", "switch", "rollback", "clean", "rollback", "clean"
+    ]), history
     assert all(job["status"] == "succeeded" for job in history)
   '';
 }

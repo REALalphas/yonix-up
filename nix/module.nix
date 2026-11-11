@@ -71,7 +71,9 @@ let
     cache =
       if cfg.cache.enable then
         {
-          url = "http://${if cfg.cache.listenAddress == "0.0.0.0" then "127.0.0.1" else cfg.cache.listenAddress}:${toString cfg.cache.port}";
+          url = "http://${
+            if cfg.cache.listenAddress == "0.0.0.0" then "127.0.0.1" else cfg.cache.listenAddress
+          }:${toString cfg.cache.port}";
           public_key_file = "/var/lib/yonix-cache/public-key";
         }
       else
@@ -193,7 +195,7 @@ in
     btrfs.reserveGiB = mkOption {
       type = types.ints.between 1 128;
       default = 8;
-      description = "Unallocated Btrfs device space to recover before switch/update and after clean. Doubled under metadata pressure and capped at 25% of filesystem device size. This is a checked target, not a hard reservation; no background cleanup is scheduled.";
+      description = "Unallocated Btrfs device space to recover before switch/update and after clean. Doubled under metadata pressure and capped at 25% of filesystem device size. Clean continues bounded compaction beyond this target and resumes its queue on subsequent calls. This is a checked target, not a hard reservation; no background cleanup is scheduled.";
     };
   };
   config = mkIf cfg.enable {
