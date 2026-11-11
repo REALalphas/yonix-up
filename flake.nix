@@ -50,6 +50,9 @@
         clean = import ./nix/clean-test.nix {
           pkgs = import nixpkgs { inherit system; };
         };
+        btrfs = import ./nix/btrfs-vm-test.nix {
+          pkgs = import nixpkgs { inherit system; };
+        };
         vm = import ./nix/vm-test.nix {
           inherit self system;
           pkgs = import nixpkgs { inherit system; };

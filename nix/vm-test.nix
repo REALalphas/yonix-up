@@ -83,6 +83,8 @@ pkgs.testers.runNixOSTest {
     activation_flake = "{ outputs = { self }: { nixosConfigurations.test.config.system.build = { toplevel = " + store_string(current) + "; nixos-rebuild = " + store_string("${pkgs.nixos-rebuild}") + "; }; }; }"
     machine.succeed("cat > /home/operator/nixos/flake.nix <<'YONIX_FLAKE'\n" + activation_flake + "\nYONIX_FLAKE")
     machine.succeed("su - operator -c 'yonix switch --yes'")
+    switch_id = json.loads(machine.succeed("su - operator -c 'yonix history'"))[0]["id"]
+    assert "Btrfs maintenance (switch)" in machine.succeed("su - operator -c 'yonix logs " + switch_id + "'")
     machine.succeed("test -e /run/yonix-bootloader-called")
     machine.succeed("su - operator -c 'yonix rollback --yes'")
     machine.succeed("su - operator -c 'yonix clean --yes'")
@@ -90,6 +92,7 @@ pkgs.testers.runNixOSTest {
     # destructive scratch/journals/prune steps); the log proves it ran.
     clean_id = json.loads(machine.succeed("su - operator -c 'yonix history'"))[0]["id"]
     assert "nix-collect-garbage --delete-older-than" in machine.succeed("su - operator -c 'yonix logs " + clean_id + "'")
+    assert "Btrfs maintenance (clean)" in machine.succeed("su - operator -c 'yonix logs " + clean_id + "'")
     # Legacy mode: only configuration.nix is present. Check/build would need
     # an evaluatable legacy system (NIX_PATH/channels), which this offline VM
     # cannot provide; that path is covered by the workflow test with fake

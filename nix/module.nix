@@ -14,16 +14,21 @@ let
     mkIf
     ;
   flakeRef = "${lib.optionalString (cfg.sourceMode == "path") "path:"}${cfg.configPath}#${cfg.host}";
-  clean = pkgs.callPackage ./clean.nix { keepGenerations = cfg.keepGenerations; };
+  btrfsMaintenance = pkgs.callPackage ./btrfs-maintenance.nix { };
+  clean = pkgs.callPackage ./clean.nix {
+    inherit btrfsMaintenance;
+    keepGenerations = cfg.keepGenerations;
+  };
+  switch = pkgs.callPackage ./switch.nix { inherit btrfsMaintenance; };
   helper = pkgs.writeShellScript "yonix-system" ''
     set -eu
     if [ "$#" -ne 1 ]; then exit 64; fi
     case "$1" in
       switch)
         if [ -f ${lib.escapeShellArg cfg.configPath}/flake.nix ]; then
-          set -- ${pkgs.nixos-rebuild}/bin/nixos-rebuild switch --flake ${lib.escapeShellArg flakeRef} --no-write-lock-file
+          set -- ${switch} switch --flake ${lib.escapeShellArg flakeRef} --no-write-lock-file
         elif [ -f ${lib.escapeShellArg cfg.configPath}/configuration.nix ]; then
-          set -- ${pkgs.nixos-rebuild}/bin/nixos-rebuild switch --no-flake -I nixos-config=${lib.escapeShellArg cfg.configPath}/configuration.nix
+          set -- ${switch} switch --no-flake -I nixos-config=${lib.escapeShellArg cfg.configPath}/configuration.nix
         else
           echo "No flake.nix or configuration.nix in ${lib.escapeShellArg cfg.configPath}" >&2
           exit 64
