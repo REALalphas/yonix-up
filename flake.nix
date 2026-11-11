@@ -47,6 +47,9 @@
       );
       checks = forAllSystems (system: {
         package = self.packages.${system}.yonix;
+        clean = import ./nix/clean-test.nix {
+          pkgs = import nixpkgs { inherit system; };
+        };
         vm = import ./nix/vm-test.nix {
           inherit self system;
           pkgs = import nixpkgs { inherit system; };

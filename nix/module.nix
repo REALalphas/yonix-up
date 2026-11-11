@@ -14,6 +14,7 @@ let
     mkIf
     ;
   flakeRef = "${lib.optionalString (cfg.sourceMode == "path") "path:"}${cfg.configPath}#${cfg.host}";
+  clean = pkgs.callPackage ./clean.nix { keepGenerations = cfg.keepGenerations; };
   helper = pkgs.writeShellScript "yonix-system" ''
     set -eu
     if [ "$#" -ne 1 ]; then exit 64; fi
@@ -29,18 +30,7 @@ let
         fi
         ;;
       rollback) set -- ${pkgs.nixos-rebuild}/bin/nixos-rebuild switch --rollback --no-reexec ;;
-      clean)
-        # GC first, then a soft btrfs rebalance (usage=5) on every mounted btrfs.
-        # Balance failures must not fail cleanup: balance is best-effort only.
-        ${pkgs.nix}/bin/nix-collect-garbage --delete-older-than ${lib.escapeShellArg cfg.keepGenerations}
-        # One balance pass per filesystem (dedupe by UUID: subvolumes share one FS).
-        ${pkgs.util-linux}/bin/findmnt -rn -t btrfs -o TARGET,UUID | ${pkgs.gawk}/bin/awk '!seen[$2]++ {print $1}' | while IFS= read -r mount; do
-          [ -n "$mount" ] || continue
-          ${pkgs.btrfs-progs}/bin/btrfs balance start -musage=5 "$mount" || true
-          ${pkgs.btrfs-progs}/bin/btrfs balance start -dusage=5 "$mount" || true
-        done
-        exit 0
-        ;;
+      clean) set -- ${clean} ;;
       *) exit 64 ;;
     esac
     exec ${pkgs.util-linux}/bin/flock --nonblock /run/lock/yonix-system.lock \
