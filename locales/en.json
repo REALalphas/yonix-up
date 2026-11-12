@@ -54,7 +54,7 @@
   "actionClean": "Clean",
   "confirmSwitch": "The system configuration will be built and applied. Services may restart.",
   "confirmRollback": "The previous NixOS generation will be activated.",
-  "confirmClean": "Old generations will be deleted according to the configured retention period. Unused Nix store paths will be collected.",
+  "confirmClean": "Expired system temporary files, caches and crash dumps will be cleaned according to systemd rules. Old journals and Nix generations will be removed within configured limits. System checks, store optimisation, Btrfs maintenance and TRIM will run as configured. Personal files and application data are excluded.",
   "confirmUpdate": "The flake.lock file in the configuration repository will be updated. The system will not be applied.",
   "gtkTitle": "Your system, under control.",
   "connecting": "Connecting to Yonix…",

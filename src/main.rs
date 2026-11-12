@@ -50,7 +50,7 @@ enum Commands {
         #[arg(long, short = 'y')]
         yes: bool,
     },
-    /// Remove generations older than the configured retention period and collect garbage
+    /// Check and clean system leftovers, old generations, journals and the Nix store
     Clean {
         #[arg(long, short = 'y')]
         yes: bool,
@@ -364,7 +364,7 @@ fn main() -> Result<()> {
         }
         Commands::Clean { yes } => {
             confirm(
-                "Delete old generations and collect unreferenced store paths?",
+                "Clean expired system files, old journals and Nix generations, and run system checks?",
                 yes,
             )?;
             operation(client, Action::Clean)?;

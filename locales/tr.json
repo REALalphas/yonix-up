@@ -54,7 +54,7 @@
   "actionClean": "Temizleme",
   "confirmSwitch": "Sistem yapılandırması oluşturulup uygulanacak. Hizmetler yeniden başlatılabilir.",
   "confirmRollback": "Önceki NixOS nesli etkinleştirilecek.",
-  "confirmClean": "Eski nesiller, ayarlanan saklama süresine göre silinecek. Kullanılmayan Nix store yolları temizlenecek.",
+  "confirmClean": "Süresi dolmuş sistem geçici dosyaları, önbellekler ve çökme dökümleri systemd kurallarına göre temizlenecek. Eski günlükler ve Nix nesilleri ayarlanan sınırlar içinde silinecek. Yapılandırılan sistem kontrolleri, depo optimizasyonu, Btrfs bakımı ve TRIM çalıştırılacak. Kişisel dosyalar ve uygulama verileri korunacak.",
   "confirmUpdate": "Yapılandırma deposundaki flake.lock dosyası güncellenecek. Sistem uygulanmayacak.",
   "gtkTitle": "Sisteminiz kontrol altında.",
   "connecting": "Yonix’e bağlanılıyor…",

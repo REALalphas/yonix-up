@@ -54,7 +54,7 @@
   "actionClean": "清理",
   "confirmSwitch": "系统配置将被构建并应用。服务可能会重新启动。",
   "confirmRollback": "将启用上一个 NixOS 代次。",
-  "confirmClean": "旧代次将按照配置的保留期限删除。未使用的 Nix store 路径也将被清理。",
+  "confirmClean": "将按 systemd 规则清理过期的系统临时文件、缓存和崩溃转储，并在配置的限制内删除旧日志和 Nix 代次。将按配置运行系统检查、存储优化、Btrfs 维护和 TRIM。个人文件和应用数据将保留。",
   "confirmUpdate": "配置仓库中的 flake.lock 文件将被更新。系统不会被应用。",
   "gtkTitle": "掌控您的系统。",
   "connecting": "正在连接 Yonix…",
