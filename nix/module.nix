@@ -20,6 +20,13 @@ let
   clean = pkgs.callPackage ./clean.nix {
     inherit btrfsMaintenance;
     keepGenerations = cfg.keepGenerations;
+    inherit (cfg.cleanup)
+      journalMaxAge
+      journalMaxSizeMiB
+      verifyStore
+      optimiseStore
+      trim
+      ;
   };
   switch = pkgs.callPackage ./switch.nix { inherit btrfsMaintenance; };
   helper = pkgs.writeShellScript "yonix-system" ''
@@ -191,6 +198,33 @@ in
       type = types.strMatching "[1-9][0-9]*d";
       default = "14d";
       description = "Age of generations to retain during explicit cleanup. No automatic cleanup is scheduled.";
+    };
+    cleanup = {
+      journalMaxAge = mkOption {
+        type = types.strMatching "[1-9][0-9]*d";
+        default = "14d";
+        description = "Maximum age of archived system journals during explicit clean. Active journals are rotated first.";
+      };
+      journalMaxSizeMiB = mkOption {
+        type = types.ints.between 1 1048576;
+        default = 512;
+        description = "Archive size limit in MiB passed to journalctl during explicit clean. Active files are outside this limit.";
+      };
+      verifyStore = mkOption {
+        type = types.bool;
+        default = true;
+        description = "Verify the hashes of all remaining Nix store contents during explicit clean, without signature checks, repair or downloads. May be slow on large stores.";
+      };
+      optimiseStore = mkOption {
+        type = types.bool;
+        default = true;
+        description = "Deduplicate identical Nix store files during explicit clean. Skipped if the enabled integrity check fails.";
+      };
+      trim = mkOption {
+        type = types.bool;
+        default = true;
+        description = "Run fstrim on supported mounted fstab filesystems (plus root) after explicit clean, honoring X-fstrim.notrim. Discard bytes are not newly reclaimed file space.";
+      };
     };
     btrfs.reserveGiB = mkOption {
       type = types.ints.between 1 128;

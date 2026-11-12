@@ -54,7 +54,7 @@
   "actionClean": "Bereinigung",
   "confirmSwitch": "Die Systemkonfiguration wird erstellt und angewendet. Dienste können neu gestartet werden.",
   "confirmRollback": "Die vorherige NixOS-Generation wird aktiviert.",
-  "confirmClean": "Alte Generationen werden gemäß der eingestellten Aufbewahrungsfrist gelöscht. Nicht mehr verwendete Nix-Store-Pfade werden bereinigt.",
+  "confirmClean": "Abgelaufene temporäre Systemdateien, Caches und Absturzabbilder werden nach systemd-Regeln bereinigt. Alte Journale und Nix-Generationen werden gemäß den eingestellten Grenzen gelöscht. Systemprüfungen, Store-Optimierung, Btrfs-Wartung und TRIM erfolgen wie konfiguriert. Persönliche Dateien und Anwendungsdaten bleiben erhalten.",
   "confirmUpdate": "Die Datei flake.lock im Konfigurationsrepository wird aktualisiert. Das System wird nicht angewendet.",
   "gtkTitle": "Dein System unter Kontrolle.",
   "connecting": "Verbindung zu Yonix wird hergestellt…",

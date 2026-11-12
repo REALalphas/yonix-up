@@ -48,6 +48,12 @@ pkgs.testers.runNixOSTest {
     '';
     virtualisation.additionalPaths = [ pkgs.pkgsStatic.busybox ];
     nix.settings.substituters = lib.mkForce [ ];
+    # Store optimisation hardlinks files: a local image avoids stale 9p file
+    # handles when overlayfs copies up the shared host store during relinking.
+    virtualisation.useNixStoreImage = true;
+    virtualisation.writableStore = true;
+    virtualisation.writableStoreUseTmpfs = false;
+    virtualisation.diskSize = 4096;
     virtualisation.memorySize = 1536;
   };
   testScript = ''
@@ -88,12 +94,19 @@ pkgs.testers.runNixOSTest {
     assert "Btrfs maintenance (switch)" in machine.succeed("su - operator -c 'yonix logs " + switch_id + "'")
     machine.succeed("test -e /run/yonix-bootloader-called")
     machine.succeed("su - operator -c 'yonix rollback --yes'")
+    machine.succeed("install -d /var/cache/yonix-clean-fixture /home/operator/.cache/yonix-clean-fixture")
+    machine.succeed("printf 'd /var/cache/yonix-clean-fixture 0755 root root m:1d -\\n' > /etc/tmpfiles.d/yonix-clean-fixture.conf")
+    machine.succeed("touch -d '3 days ago' /var/cache/yonix-clean-fixture/old /home/operator/.cache/yonix-clean-fixture/old")
+    machine.succeed("touch /var/cache/yonix-clean-fixture/recent")
     machine.succeed("su - operator -c 'yonix clean --yes'")
-    # Clean runs the retention GC (like the original yonix minus its
-    # destructive scratch/journals/prune steps); the log proves it ran.
+    machine.fail("test -e /var/cache/yonix-clean-fixture/old")
+    machine.succeed("test -e /var/cache/yonix-clean-fixture/recent && test -e /home/operator/.cache/yonix-clean-fixture/old")
+    # The real maintenance pipeline must be visible through the CLI job log.
     clean_id = json.loads(machine.succeed("su - operator -c 'yonix history'"))[0]["id"]
     assert "nix-collect-garbage --delete-older-than" in machine.succeed("su - operator -c 'yonix logs " + clean_id + "'")
-    assert "Btrfs maintenance (clean)" in machine.succeed("su - operator -c 'yonix logs " + clean_id + "'")
+    clean_log = machine.succeed("su - operator -c 'yonix logs " + clean_id + "'")
+    for stage in ["Btrfs maintenance (clean)", "systemd-tmpfiles --clean", "--vacuum-time=14d", "store verify --all --no-trust", "nix-store --optimise", "fstrim --fstab", "Yonix clean summary:"]:
+        assert stage in clean_log, stage
     machine.succeed("test $(readlink -f /var/lib/yonix/result) = " + build_root)
     machine.succeed("test $(cat /var/lib/yonix/result) = tested")
     # Legacy mode: only configuration.nix is present. Check/build would need
