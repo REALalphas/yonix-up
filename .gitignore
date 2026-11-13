@@ -4,3 +4,22 @@
 .direnv/
 /node_modules/
 /artifacts/
+
+# Local credentials and daemon state
+.env
+.env.*
+!.env.example
+*.token
+*.pem
+*.key
+/config.json
+/remote.json
+/connections.json
+/state/
+
+# Local editor and OS files
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store

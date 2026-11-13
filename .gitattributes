@@ -1,0 +1,9 @@
+* text=auto eol=lf
+*.tgz binary
+*.tar.gz binary
+*.woff2 binary
+*.png binary
+*.jpg binary
+old/** linguist-vendored
+vendor/** linguist-vendored
+web/** linguist-generated

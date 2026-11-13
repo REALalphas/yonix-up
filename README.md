@@ -2,14 +2,25 @@
 
 A NixOS companion written in Rust: native GTK 4/libadwaita application, CLI and a browser panel backed by the same operation service.
 
-This is the first working version, not a release with an established compatibility guarantee. The original Bash implementation is preserved in `old/` and is not installed by the new package.
+**Status: experimental (0.1.0).** Yonix can activate NixOS configurations and remove old generations. Review the operation and retention settings before enabling system changes. There is no established compatibility guarantee or release support schedule.
+
+- Native GTK 4/libadwaita desktop, CLI and browser panel with 13 interface languages.
+- Flake and legacy configurations; check, build, compare, activate and roll back.
+- Explicit system maintenance, multi-host management and signed build caches.
+- Reproducible Nix packages for `x86_64-linux` and `aarch64-linux`; CI targets `x86_64-linux`.
+
+[Installation](#install-on-nixos) · [Remote access](#browser-and-remote-access) · [Multi-host setup](docs/peering.md) · [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md) · [Changes](CHANGELOG.md)
+
+Yonix application code is licensed under **AGPL-3.0-or-later**. The bundled Alpha UI has separate, restrictive AHCL-1.0 terms; see [third-party notices](THIRD_PARTY_NOTICES.md). The matching official Alpha UI source archive is included. See the [publication checklist](docs/publishing.md) before distributing builds.
+
+The original Bash implementation is archived in [`old/`](old/README.md) and is not installed by the current package.
 
 ## Install on NixOS
 
-Add the flake as an input. While developing locally:
+Add Yonix to the `inputs` in your NixOS flake:
 
 ```nix
-inputs.yonix.url = "git+file:///home/alphas/Documents/Projects/_sysadmin/nix/yonix-up";
+inputs.yonix.url = "github:REALalphas/yonix-up";
 inputs.yonix.inputs.nixpkgs.follows = "nixpkgs";
 ```
 
@@ -22,15 +33,17 @@ Include its module in your `nixosSystem` modules and configure it:
 
   programs.yonix = {
     enable = true;
-    user = "alphas";
-    configPath = "/home/alphas/Documents/Projects/_sysadmin/nix/nix-new";
-    host = "nas"; # defaults to networking.hostName
-    sourceMode = "path"; # include local config.nix even when Git ignores it
-    allowSystemChanges = true;
+    user = "operator"; # replace with your existing local user
+    configPath = "/home/operator/nixos";
+    # host defaults to networking.hostName
+    # sourceMode = "path"; # include ignored/untracked files; see below
+    allowSystemChanges = false; # enable only after reviewing the trust model below
     keepGenerations = "14d";
   };
 }
 ```
+
+Replace `operator` and `configPath` with your existing user and configuration checkout. The GitHub input requires repository access until the repository is public. Commit `flake.lock` to pin the selected revision.
 
 `inputs` must be passed through `specialArgs`, or put the module directly in the flake's `modules` list. Apply this configuration once with your existing rebuild workflow. Yonix then appears in the application menu and as `yonix` in the terminal. Its service starts at boot, including on machines without a graphical login.
 
@@ -113,24 +126,24 @@ Operations are serialized by the server. A second operation receives an error wh
 
 ## Browser and remote access
 
-The service defaults to **`127.0.0.1:9847`**. Locally, open `http://127.0.0.1:9847` and sign in with `yonix token`. The token file and state directory are accessible only to the configured user and root. The browser saves a successfully verified gateway token in local storage for this origin and reconnects after reload. Disconnect in Maintenance removes the saved token; a rejected token is also cleared. Peer tokens remain in private server files and are never returned to the browser. No third-party scripts, fonts or network services are used.
+The service defaults to **`127.0.0.1:9847`**. Locally, open `http://127.0.0.1:9847` and sign in with `yonix token`. The token file and state directory are accessible only to the configured user and root. The browser saves a successfully verified gateway token in local storage for this origin and reconnects after reload. Disconnect in Maintenance removes the saved token; a rejected token is also cleared. Peer tokens remain in private server files and are never returned to the browser. Scripts, fonts and other assets are served locally; the panel does not load third-party network resources.
 
 For remote access, on your client computer:
 
 ```console
-ssh -N -L 9847:127.0.0.1:9847 alphas@nas
+ssh -N -L 9847:127.0.0.1:9847 operator@server
 ```
 
-Open `http://127.0.0.1:9847` on that computer. Get the token from a separate SSH terminal (`ssh alphas@nas yonix token`) and paste it into the sign-in form. Use another local port if 9847 is occupied. SSH provides encryption and host authentication.
+Open `http://127.0.0.1:9847` on that computer. Get the token from a separate SSH terminal (`ssh operator@server yonix token`) and paste it into the sign-in form. Use another local port if 9847 is occupied. SSH provides encryption and host authentication.
 
 For direct access on a trusted local network, explicitly select the host's private IPv4 address:
 
 ```nix
-programs.yonix.listenAddress = "10.0.2.142";
+programs.yonix.listenAddress = "10.0.0.10";
 programs.yonix.openFirewall = true;
 ```
 
-Open `http://10.0.2.142:9847`. Token authentication and same-origin/Host checks remain enabled. This mode uses unencrypted HTTP, so use SSH for untrusted networks. For a standalone JSON configuration, set `listen_address` to the same IPv4 address.
+Open `http://10.0.0.10:9847`. Token authentication and same-origin/Host checks remain enabled. This mode uses unencrypted HTTP, so use SSH for untrusted networks. For a standalone JSON configuration, set `listen_address` to the same IPv4 address.
 
 To listen on all IPv4 interfaces, set `programs.yonix.listenAddress = "0.0.0.0"` (JSON: `"listen_address": "0.0.0.0"`). A concrete public IPv4 address is also accepted. No additional permission option is required; remove the old `allowPublicBind` / `allow_public_bind` setting from existing configurations. Open the panel using the server's numeric interface address. With a wildcard bind, the CLI, desktop and `yonix web` use `127.0.0.1` locally. Host checks accept numeric IPv4 addresses and `localhost`; token authentication and same-origin checks still apply.
 
@@ -150,6 +163,16 @@ Use the managed-host selector to operate another Yonix host through the current 
 
 ## Development and verification
 
+GitHub Actions runs `.github/workflows/ci.yml` on pushes and pull requests, and
+can also be started manually with `workflow_dispatch`. It checks frontend
+type safety, production builds and browser tests; Rust formatting, Clippy and
+tests with and without GTK; and the display-dependent GTK test under Xvfb.
+Separate Nix jobs build both packages, validate the NixOS module and run the
+cleanup tests. The `vm`, `btrfs` and `peers` checks run in disposable NixOS VMs
+on KVM-enabled Ubuntu runners. Actions have read-only repository permissions;
+no deployment or repository secrets are required. A repository hygiene job validates workflows and scans the full Git history with Gitleaks (redacted output). CI uses the pinned
+`flake.lock`, `Cargo.lock` and `package-lock.json` dependencies.
+
 ```console
 nix develop
 cargo fmt --check
@@ -162,13 +185,15 @@ nix build .#checks.x86_64-linux.module
 nix build .#checks.x86_64-linux.clean # policy/ioctl fixtures, cleanup isolation/failure tests, wrappers and shellcheck; no host maintenance
 nix build .#checks.x86_64-linux.btrfs # disposable Btrfs VM: both block-group trees, convergence, data checksums
 nix build .#checks.x86_64-linux.vm # isolated NixOS service/build/activation/rollback/permissions test
+nix build .#checks.x86_64-linux.peers # isolated two-host peering and signed-cache test
 ```
 
 Core and API tests can also run with `cargo test --no-default-features`. End-to-end tests run the real daemon and CLI with fake Nix executables to exercise success, exit failures, concurrent requests, auth, origin/Host validation and restart persistence without modifying the host system. A display-dependent GTK test is ignored by the default suite; run it in an isolated session:
 
 ```console
 nix shell nixpkgs#xvfb-run nixpkgs#dbus --command \
-  xvfb-run -a dbus-run-session -- env GDK_BACKEND=x11 GTK_A11Y=none \
+  xvfb-run -a dbus-run-session --config-file=tests/dbus-session.conf -- \
+  env GDK_BACKEND=x11 GTK_A11Y=none \
   cargo test --lib native_window_renders_and_connects -- --ignored --test-threads=1
 ```
 
@@ -182,7 +207,7 @@ Use `yonix-headless` to avoid GTK/libadwaita on servers. Release builds use Carg
 - `src/server.rs`: local/LAN API, authentication and embedded web assets.
 - `src/client.rs`: shared CLI/desktop client.
 - `src/gui.rs`: native libadwaita interface; networking stays off the GTK thread.
-- `frontend/`: React client using the official Alpha UI 0.4.11 release from alphas-base.
+- `frontend/`: React client using the official Alpha UI 0.4.11 release archives bundled in `vendor/alpha-ui/`.
 - `web/`: generated assets embedded into the Rust binary; rebuild with `npm run build`.
 - `vendor/alpha-ui/`: checksummed core/React release archives for reproducible Nix builds.
 - `locales/`: shared JSON translations for the desktop and browser.
@@ -191,3 +216,9 @@ Use `yonix-headless` to avoid GTK/libadwaita on servers. Release builds use Carg
 To add a language, create a JSON file in `locales/` with the same keys as `en.json`, register it in `src/i18n.rs`, and add its display name to `frontend/i18n.ts`. The Rust and browser tests check the registered files, keys and selector options.
 
 Next work: generation browsing, service-level diff, cancellation semantics, richer progress reporting and accessibility review. Built-in TLS and multi-user permissions are outside this first version.
+
+## License and project support
+
+Copyright (C) 2026 Yonix contributors. Yonix application code is available under the [GNU Affero General Public License, version 3 or later](LICENSE), without warranty. Third-party packages and assets retain their own licenses; the AGPL grant does not relicense Alpha UI. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+Report ordinary bugs and feature requests through [GitHub Issues](https://github.com/REALalphas/yonix-up/issues). Read [SECURITY.md](SECURITY.md) before reporting a possible vulnerability, and [CONTRIBUTING.md](CONTRIBUTING.md) before submitting changes. Support is provided on a best-effort basis.

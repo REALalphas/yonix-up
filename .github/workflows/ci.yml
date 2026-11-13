@@ -1,0 +1,134 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  repository:
+    name: Repository hygiene
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - uses: cachix/install-nix-action@d698718aa798980d17dd749f03beae0b51183399 # v31
+      - name: Validate workflows
+        run: nix shell --inputs-from . nixpkgs#actionlint --command actionlint
+      - name: Scan Git history for secrets
+        run: nix shell --inputs-from . nixpkgs#gitleaks --command gitleaks git --redact --max-archive-depth=2 --log-opts=--all .
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Typecheck and build production assets
+        run: npm run build
+      - name: Test browser model, rendering and translations
+        run: npm test
+
+  rust:
+    name: Rust and GTK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      CARGO_BUILD_JOBS: '2'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_PROFILE_TEST_DEBUG: '0'
+      CARGO_INCREMENTAL: '0'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Make room for the Nix store on the disposable runner
+        run: sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
+      - uses: cachix/install-nix-action@d698718aa798980d17dd749f03beae0b51183399 # v31
+        with:
+          extra_nix_config: |
+            max-jobs = 2
+            cores = 2
+      - name: Validate GitHub Actions workflows
+        run: nix shell --inputs-from . nixpkgs#actionlint --command actionlint
+      - name: Check Rust formatting
+        run: nix develop --command cargo fmt --check
+      - name: Lint desktop and headless targets
+        run: |
+          nix develop --command cargo clippy --locked --all-targets -- -D warnings
+          nix develop --command cargo clippy --locked --no-default-features --all-targets -- -D warnings
+      - name: Test desktop and headless targets
+        run: |
+          nix develop --command cargo test --locked
+          nix develop --command cargo test --locked --no-default-features
+      - name: Test the native GTK window
+        run: |
+          nix develop --command xvfb-run -a dbus-run-session --config-file=tests/dbus-session.conf -- \
+            env GDK_BACKEND=x11 GTK_A11Y=none \
+            cargo test --locked --lib native_window_renders_and_connects -- --ignored --test-threads=1
+
+  nix:
+    name: Nix (${{ matrix.target }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - checks.x86_64-linux.package
+          - packages.x86_64-linux.yonix-headless
+          - checks.x86_64-linux.module
+          - checks.x86_64-linux.clean
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Make room for the Nix store on the disposable runner
+        run: sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
+      - uses: cachix/install-nix-action@d698718aa798980d17dd749f03beae0b51183399 # v31
+        with:
+          extra_nix_config: |
+            max-jobs = 2
+            cores = 2
+      - name: Build and test
+        env:
+          NIX_TARGET: ${{ matrix.target }}
+        run: nix build --no-link --print-build-logs ".#$NIX_TARGET"
+
+  nixos:
+    name: NixOS VM (${{ matrix.check }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        check: [vm, btrfs, peers]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Make room for VM closures on the disposable runner
+        run: sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
+      - uses: cachix/install-nix-action@d698718aa798980d17dd749f03beae0b51183399 # v31
+        with:
+          extra_nix_config: |
+            max-jobs = 2
+            cores = 2
+            system-features = nixos-test benchmark big-parallel kvm
+      - name: Enable KVM for isolated NixOS tests
+        run: |
+          test -c /dev/kvm
+          sudo chmod a+rw /dev/kvm
+          test -r /dev/kvm && test -w /dev/kvm
+      - name: Run VM test
+        env:
+          NIX_CHECK: ${{ matrix.check }}
+        run: nix build --no-link --print-build-logs ".#checks.x86_64-linux.$NIX_CHECK"

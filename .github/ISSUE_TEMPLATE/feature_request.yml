@@ -1,0 +1,17 @@
+name: Feature request
+description: Propose an improvement to Yonix.
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+      description: Explain the user task and the limitation you encounter.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the result, alternatives and relevant permissions or system effects.
+    validations:
+      required: true

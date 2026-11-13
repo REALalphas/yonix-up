@@ -1,0 +1,34 @@
+name: Bug report
+description: Report reproducible behavior in the current Yonix application.
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For security vulnerabilities, follow SECURITY.md. Remove tokens, signing keys, private URLs and personal data before submitting logs or configuration.
+  - type: input
+    id: version
+    attributes:
+      label: Yonix version or commit
+      description: Include the exact revision if running a development build.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: NixOS version, architecture, flake or legacy configuration, desktop / CLI / browser and relevant settings.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Give the smallest reproduction, expected behavior and actual behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Sanitized logs
+      description: Include relevant command output or job logs. Review the content for credentials before posting.
+      render: text

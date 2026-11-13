@@ -1,12 +1,14 @@
-# Yonix
+# Yonix — archived Bash implementation
+
+Historical reference only; not maintained or installed by the current package. Use the [current installation instructions](../README.md#install-on-nixos). The commands below describe the original script.
 
 Yonix is a wrapper for `nixos-rebuild` and `nix flake` that automates privilege elevation, directory tracking, and system maintenance.
 
 ## Installation
 
 ```bash
-git clone https://github.com/yourusername/yonix.git
-./yonix/yonix
+git clone https://github.com/REALalphas/yonix-up.git
+./yonix-up/old/yonix
 ```
 
 The script will self-install to `~/.local/bin/yonix` on first run.

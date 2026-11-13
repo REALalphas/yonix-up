@@ -4,7 +4,9 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.85"
 description = "A NixOS companion for the desktop, terminal and browser"
-license = "GPL-3.0-or-later"
+license = "AGPL-3.0-or-later"
+repository = "https://github.com/REALalphas/yonix-up"
+readme = "README.md"
 
 [features]
 default = ["gui"]

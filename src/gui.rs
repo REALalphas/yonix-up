@@ -611,7 +611,10 @@ mod tests {
             }
             let mut labels = Vec::new();
             collect(window.upcast_ref(), &mut labels);
-            if labels.iter().any(|s| s == "nas") {
+            if labels
+                .iter()
+                .any(|s| s == &format!("nas · {}", Language("ru").text("missingConfiguration")))
+            {
                 assert!(labels.iter().any(|s| s == "Собрать"));
                 assert!(labels.iter().any(|s| s == "Операций пока нет"));
                 break;
@@ -652,7 +655,10 @@ mod tests {
             }
             let mut labels = Vec::new();
             collect(english_window.upcast_ref(), &mut labels);
-            if labels.iter().any(|s| s == "nas") {
+            if labels
+                .iter()
+                .any(|s| s == &format!("nas · {}", Language("en").text("missingConfiguration")))
+            {
                 assert!(labels.iter().any(|s| s == "Build"));
                 assert!(labels.iter().any(|s| s == "No operations yet"));
                 break;
@@ -681,7 +687,10 @@ mod tests {
                 }
                 let mut labels = Vec::new();
                 collect(window.upcast_ref(), &mut labels);
-                if labels.iter().any(|s| s == "nas") {
+                if labels
+                    .iter()
+                    .any(|s| s == &format!("nas · {}", Language(code).text("missingConfiguration")))
+                {
                     assert!(
                         labels.iter().any(|s| s == Language(code).text("build")),
                         "{code}: build label missing"

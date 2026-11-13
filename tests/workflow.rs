@@ -57,7 +57,9 @@ fn authenticated_workflow(listen_address: std::net::IpAddr) {
 printf 'stdout: %s\n' "$*"
 printf 'stderr: fixture\n' >&2
 printf '%s\n' "$@" >> arguments
-if [ "$1" = build ]; then sleep 0.4; fi
+if [ "$1" = build ]; then
+    while [ -f hold-build ]; do sleep 0.01; done
+fi
 if [ -f fail ]; then exit 7; fi
 "#,
             shell.display()
@@ -238,11 +240,13 @@ if [ -f fail ]; then exit 7; fi
     let client = Client::new(&config, None, None).unwrap();
     assert_eq!(client.status().unwrap().host, "nas");
     assert!(client.start(Action::Switch, true).is_err());
+    // Keep the fixture running until the overlapping request has completed.
+    // A fixed sleep races with scheduling on busy CI runners.
+    fs::write(repo.join("hold-build"), "").unwrap();
     let job = client.start(Action::Build, false).unwrap();
-    assert!(
-        client.start(Action::Check, false).is_err(),
-        "Parallel operations must be rejected"
-    );
+    let concurrent = client.start(Action::Check, false);
+    fs::remove_file(repo.join("hold-build")).unwrap();
+    assert!(concurrent.is_err(), "Parallel operations must be rejected");
     assert_eq!(await_job(&client, &job.id).status, "succeeded");
     let log = client.log(&job.id).unwrap();
     assert!(log.contains("stdout:"));
