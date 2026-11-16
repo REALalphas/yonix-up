@@ -1,0 +1,21 @@
+name: Feature request
+description: Propose an improvement to Yonix.
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not use this template to report a vulnerability. Follow [SECURITY.md](https://github.com/REALalphas/yonix-up/blob/main/SECURITY.md) instead.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+      description: Describe the user task and the limitation you encounter.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Explain the desired result, alternatives and any relevant permissions or system effects.
+    validations:
+      required: true

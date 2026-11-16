@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Yonix
+Comment=Manage your NixOS system
+Comment[ru]=Управление системой NixOS
+Exec=yonix gui
+Icon=com.alphas.yonix
+Terminal=false
+Categories=System;Settings;GTK;
+StartupNotify=true

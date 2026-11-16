@@ -1,0 +1,46 @@
+name: Bug report
+description: Report a reproducible problem in Yonix.
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For security vulnerabilities, do not post details here. Follow [SECURITY.md](https://github.com/REALalphas/yonix-up/blob/main/SECURITY.md). Remove tokens, signing keys, private URLs and personal data before sharing logs or configuration.
+  - type: input
+    id: version
+    attributes:
+      label: Yonix version or commit
+      description: Include the exact revision for a development build.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: NixOS version, architecture, flake or legacy configuration, interface (desktop, CLI or browser), and relevant settings.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Give the smallest set of steps that reproduces the problem.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Sanitized logs or command output
+      description: Include only relevant output, after reviewing it for credentials and personal data.
+      render: text

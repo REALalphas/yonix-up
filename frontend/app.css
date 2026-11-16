@@ -1,0 +1,27 @@
+html { background:var(--as-color-canvas); color:var(--as-color-text); }
+body { margin:0; }
+* { box-sizing:border-box; }
+.page-layout { padding:var(--as-space-6); display:flex; flex-direction:column; gap:var(--as-space-6); width:100%; min-width:0; }
+.system-grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,2fr); gap:var(--as-space-6); }
+.system-grid > :last-child { grid-column:1/-1; }
+.path-value { overflow-wrap:anywhere; }
+.host-value { position:relative; display:inline-block; padding-right:var(--as-space-5); overflow:visible; }
+.host-badge { position:absolute; top:0; right:0; transform:translate(35%,-55%); }
+.actions-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:var(--as-space-5); }
+.action-bottom { margin-top:auto; }
+.button-row { display:flex; justify-content:flex-end; flex-wrap:wrap; gap:var(--as-space-3); }
+.history-strip { display:flex; gap:var(--as-space-3); overflow-x:auto; overscroll-behavior-inline:contain; padding:var(--as-space-1); scroll-snap-type:x proximity; }
+.history-item { flex:0 0 min(15rem, 72vw); scroll-snap-align:start; }
+.operation-details { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:var(--as-space-4); }
+.log-output { white-space:pre-wrap; overflow-wrap:anywhere; max-height:60vh; overflow:auto; }
+.login-layout { min-height:100dvh; display:grid; place-items:center; padding:var(--as-space-6); }
+.login-content { width:100%; max-width:32rem; }
+@media(max-width:600px) { .actions-grid,.system-grid { grid-template-columns:minmax(0,1fr); } .login-layout { padding:var(--as-space-4); } }
+.page-actions { display:flex; justify-content:flex-end; gap:var(--as-space-3); }
+.pairing-row { display:grid; grid-template-columns:minmax(0,3fr) minmax(0,1fr); gap:var(--as-space-5); }
+@media(max-width:600px) { .pairing-row { grid-template-columns:minmax(0,1fr); } }
+.connections-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:var(--as-space-5); align-items:start; }
+@media(max-width:1100px) { .connections-grid { grid-template-columns:minmax(0,1fr); } }
+@media(max-width:600px) { .operation-details { grid-template-columns:minmax(0,1fr); } }
+
+.application-layout { display:grid; min-height:100dvh; }

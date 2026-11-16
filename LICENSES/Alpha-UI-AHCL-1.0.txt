@@ -1,0 +1,105 @@
+Alpha's Hub Community License
+Version 1.0 (AHCL-1.0)
+
+1. DEFINITIONS AND SCOPE
+
+"Licensor" means the copyright holder granting this License, solely to
+ the extent of rights that holder owns or is authorized to license.
+"Software" means the Alpha's UI code made available under this License,
+ including modifications and derivative works of that code.
+"Individual" means a natural person acting on their own behalf.
+"Organization" means a legal entity or organized group, including a
+ company, association, charity, or public institution. A person acting
+ for an Organization is subject to the conditions for that Organization.
+"Commercial Use" means use directed toward commercial advantage or
+ monetary compensation, including paid work, products, services, and
+ internal operations supporting commercial activity. "Noncommercial
+ Use" means use without that purpose. The activity, rather than an
+ Organization's legal form, determines the applicable category.
+"Source" means the preferred form of the Software for modification,
+ including relevant build and generation scripts.
+
+This is a source-available license with restrictions on use; it is not
+an open-source license. Separately licensed third-party material is
+excluded from the Software and retains its own terms.
+
+2. GRANT OF RIGHTS
+
+Subject to compliance with this License, the Licensor grants a worldwide,
+nonexclusive, royalty-free copyright license to use, reproduce, study,
+modify, and distribute the Software under the following conditions:
+
+(a) Individuals may undertake Noncommercial Use on their own behalf
+    without integration with Alpha's Hub.
+(b) Individuals may undertake Commercial Use on their own behalf only
+    with the operational integration specified in Section 3.
+(c) Organizations may undertake Noncommercial Use only with the
+    operational integration specified in Section 3. This permission
+    is not limited to Organizations having nonprofit legal status.
+(d) Commercial Use by an Organization requires separate express written
+    permission from the Licensor. Integration with Alpha's Hub alone
+    does not authorize such use.
+
+These conditions apply to original and modified Software. A change of
+use or user category requires compliance with the applicable conditions
+before that use begins. All rights not expressly granted are reserved.
+
+3. ALPHA'S HUB INTEGRATION
+
+"Alpha's Hub" means the separate companion hub maintained or designated
+by the Licensor. Where required by Section 2, each application or
+deployment using the Software must be registered in a functioning Hub
+instance through a compatible project adapter. The Hub must be able to
+discover the application's framework and Alpha's UI version, request
+verified updates and rebuilds, and launch the resulting application.
+The integration must be operational and maintained; a link, badge,
+unused configuration, or standalone iframe is insufficient.
+
+Temporary Hub or network unavailability does not prohibit use of the
+last working local build, provided integration is restored when the
+interruption ends. This License does not require telemetry or remote
+license activation.
+
+4. MODIFICATIONS AND DISTRIBUTION
+
+Except as separately authorized by the Licensor, the Software and its
+derivatives shall be distributed under this same AHCL-1.0 License.
+Distributions shall preserve this License and applicable copyright and
+third-party notices, identify modifications, and shall not misrepresent
+a modified version as an official release.
+
+Each distribution, including compiled Software, shall provide recipients
+with its complete corresponding Source, including modifications, at no
+additional charge, either alongside the distribution or by an identified
+download available throughout distribution of that version. Recipients
+remain subject to the use conditions in Section 2. Private modifications
+need not be published. Independent application code does not become
+Software solely by importing, linking to, or calling Alpha's UI.
+
+5. LICENSOR EXCEPTION AND THIRD-PARTY RIGHTS
+
+The Licensor and Organizations controlled by the Licensor are exempt
+from Sections 2 through 4 to the extent the Licensor owns or controls
+the relevant rights. "Control" means authority to direct an
+Organization's management and policies. This exception grants no
+additional rights in third-party material or uncontrolled contributions.
+
+Fonts, icons, dependencies, and other separately licensed material retain
+their original licenses; see THIRD_PARTY_NOTICES.md. No rights to
+unverified assets, trademarks, names, likenesses, or endorsements are
+granted by this License.
+
+6. TERMINATION; DISCLAIMER
+
+Rights granted under this License terminate upon breach of its
+conditions. Separate written permission from the relevant rights holder
+may grant additional rights.
+
+TO THE EXTENT PERMITTED BY APPLICABLE LAW, THE SOFTWARE IS PROVIDED
+"AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT.
+IN NO EVENT SHALL THE LICENSOR OR CONTRIBUTORS BE LIABLE FOR CLAIMS,
+DAMAGES, OR OTHER LIABILITY ARISING FROM THE SOFTWARE OR ITS USE,
+WHETHER IN CONTRACT, TORT, OR OTHERWISE. NOTHING IN THIS LICENSE
+LIMITS RIGHTS OR LIABILITY THAT APPLICABLE LAW DOES NOT PERMIT TO
+BE LIMITED.
