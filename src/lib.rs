@@ -7,3 +7,4 @@ pub mod i18n;
 pub mod pairing;
 pub mod peers;
 pub mod server;
+pub mod terminal;
