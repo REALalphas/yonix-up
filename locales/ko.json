@@ -117,5 +117,10 @@
   "pairingPasteLink": "여기에 페어링 링크 붙여넣기",
   "pairingCode": "코드",
   "pairingCodePlaceholder": "숫자 6자리",
-  "testConnection": "연결 테스트"
+  "testConnection": "연결 테스트",
+  "statusChecking": "확인 중",
+  "statusBuilding": "빌드 중",
+  "statusUpdating": "업데이트 중",
+  "statusRollingBack": "롤백 중",
+  "statusCleaning": "정리 중"
 }

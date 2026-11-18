@@ -117,5 +117,10 @@
   "pairingPasteLink": "Incolla qui il link di abbinamento",
   "pairingCode": "Codice",
   "pairingCodePlaceholder": "6 cifre",
-  "testConnection": "Testa connessione"
+  "testConnection": "Testa connessione",
+  "statusChecking": "Verifica",
+  "statusBuilding": "Compilazione",
+  "statusUpdating": "Aggiornamento",
+  "statusRollingBack": "Ripristino",
+  "statusCleaning": "Pulizia"
 }

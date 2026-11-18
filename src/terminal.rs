@@ -255,7 +255,16 @@ pub fn print_status(status: &Status, theme: &Theme) {
     println!("  {} {}", label("System Changes:", theme), changes_badge);
 
     let active_str = if let Some(ref act) = status.active {
-        format!("{} {}", theme.bold_yellow("● active:"), theme.bold(act))
+        if let Some(action) = status.active_action {
+            format!(
+                "{} {} ({})",
+                theme.bold_yellow("● active:"),
+                theme.bold(action.name()),
+                act
+            )
+        } else {
+            format!("{} {}", theme.bold_yellow("● active:"), theme.bold(act))
+        }
     } else {
         theme.dim("idle")
     };

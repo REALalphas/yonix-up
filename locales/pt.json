@@ -117,5 +117,10 @@
   "pairingPasteLink": "Cole o link de emparelhamento aqui",
   "pairingCode": "Código",
   "pairingCodePlaceholder": "6 dígitos",
-  "testConnection": "Testar conexão"
+  "testConnection": "Testar conexão",
+  "statusChecking": "Verificando",
+  "statusBuilding": "Construindo",
+  "statusUpdating": "Atualizando",
+  "statusRollingBack": "Revertendo",
+  "statusCleaning": "Limpando"
 }

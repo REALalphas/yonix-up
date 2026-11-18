@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { AppShell, Badge, Button, Card, Icon, Select, Stack, Text, TextInput } from '@alpha/react';
-import { api, ApiError, allowed, actionKeys, confirmations, storedToken, saveToken, clearToken, type Action, type Job, type Status, type Host, hostPath } from './model';
+import { api, ApiError, allowed, actionKeys, confirmations, storedToken, saveToken, clearToken, type Action, type Job, type Status, type Host, hostPath, resolveHostStatus } from './model';
 import { ConnectionsPage } from './Connections';
 import { HistoryPage } from './History';
 import { catalogs, names, resolveLanguage, storedLanguage } from './i18n';
@@ -15,11 +15,14 @@ export function App() {
     const hostRef = useRef(host); hostRef.current = host;
     const selectedHost = hosts.find(item => item.id === host);
     const gateway = hosts.find(item => item.local)?.label;
-    const contextStatus = !token ? 'connectingShort' : error ? 'connectionOffline' : !status ? 'connectingShort' : status.active ? 'working' : 'ready';
+    const [peerStatuses, setPeerStatuses] = useState<Record<string, { status: Status | null, error: boolean }>>({});
+    const peerRefreshTick = useRef(0);
+    const contextStatus = resolveHostStatus(status, error, token, jobs);
     const hostApi = <T,>(path: string, signal?: AbortSignal, body?: unknown) => api<T>(token, hostPath(host, path), signal, body);
     function switchHost(value: string) {
         if (pending || value === host) return;
         session.current++; hostRef.current = value;
+        peerRefreshTick.current = 0;
         newestJob.current = null;
         setHost(value); setStatus(null); setJobs([]); setSelected(null); setLog(''); setConfirmation(null); setError(null);
     }
@@ -44,6 +47,23 @@ export function App() {
             const previousNewest = newestJob.current, nextNewest = nextJobs[0]?.id ?? null;
             newestJob.current = nextNewest;
             setSelected(current => !current || current === previousNewest || !nextJobs.some(job => job.id === current) ? nextNewest : current);
+            if (peerRefreshTick.current++ % 5 === 0) {
+                const peers = nextHosts.filter(item => item.id !== host);
+                if (peers.length > 0) {
+                    void Promise.allSettled(peers.map(async peer => {
+                        try {
+                            const s = await api<Status>(token, hostPath(peer.id, 'status'), controller.signal);
+                            if (session.current === epoch && !controller.signal.aborted) {
+                                setPeerStatuses(curr => ({ ...curr, [peer.id]: { status: s, error: false } }));
+                            }
+                        } catch {
+                            if (session.current === epoch && !controller.signal.aborted) {
+                                setPeerStatuses(curr => ({ ...curr, [peer.id]: { status: null, error: true } }));
+                            }
+                        }
+                    }));
+                }
+            }
         }
         catch (e) {
             if (!controller.signal.aborted && session.current === epoch) {
@@ -136,7 +156,7 @@ export function App() {
     function operation(action: Action, description?: string) { return <Card key={action}><Stack gap={4}><Icon name={action === 'check' ? 'shield' : action === 'build' ? 'download' : action === 'diff' ? 'search' : action === 'switch' ? 'bolt' : action === 'update-inputs' ? 'refresh' : action === 'rollback' ? 'back' : 'settings'}/><Text as="h3" size="xl" font="heading" weight="medium">{t(actionKeys[action])}</Text>{description && <Text tone="secondary">{t(description)}</Text>}<div className="action-bottom"><Button width="container" disabled={!allowed(action, status, pending)} loading={pending && confirmation === action} onPress={() => void start(action)}>{t(actionKeys[action])}</Button></div></Stack></Card>; }
     if (!token)
         return <div className="alpha-ui login-layout"><div className="login-content"><Stack gap={7}><Stack gap={3}><Text font="heading" size="title" weight="medium">Yonix</Text><Text tone="secondary">{t('companion')}</Text></Stack><Card><Stack gap={6}><Stack gap={3}><Text as="h1" size="heading" font="heading" weight="medium">{t('welcome')}</Text><Text tone="secondary">{t('welcomeDescription')}</Text></Stack><form onSubmit={event => { event.preventDefault(); void connect(); }}><Stack gap={4}><TextInput id="token" label={t('accessToken')} type="password" passwordVisible={passwordVisible} onPasswordVisibleChange={setPasswordVisible} icon="key" value={input} onValueChange={setInput} placeholder={t('tokenPlaceholder')} autoComplete="off"/><Button type="submit" width="container" loading={pending} disabled={!input.trim()}>{t(pending ? 'connectingShort' : 'connect')}</Button></Stack></form><Text size="sm" tone="muted">{t('tokenCommand')} <Text as="span" font="mono">yonix token</Text> {t('onHost')}</Text></Stack></Card>{errorView}{languageSelect}</Stack></div></div>;
-    return <div className="alpha-ui application-layout"><AppShell width="container" serviceName="Yonix" context={{ label: t('managedHost'), value: host, options: hosts.map(item => item.id === host ? { value: item.id, label: item.label + ' · ' + t(contextStatus) } : { value: item.id, label: item.label }), placeholder: '', disabled: pending }} onContextChange={switchHost} selectedId={page} items={[{ id: 'system', label: t('system'), icon: 'home' }, { id: 'history', label: t('history'), icon: 'queue' }, { id: 'connections', label: t('connections'), icon: 'link' }, { id: 'maintenance', label: t('maintenance'), icon: 'settings' }]} onSelect={id => { setPage(id); setConfirmation(null); }} onServicePress={() => setPage('system')} onAccountPress={() => setPage('settings')} accountState={error ? 'error' : status?.active ? 'loading' : 'default'}><div className="page-layout">{errorView}
+    return <div className="alpha-ui application-layout"><AppShell width="container" serviceName="Yonix" context={{ label: t('managedHost'), value: host, options: hosts.map(item => { const statusKey = item.id === host ? contextStatus : resolveHostStatus(peerStatuses[item.id]?.status ?? null, peerStatuses[item.id]?.error ?? false, token); return { value: item.id, label: statusKey ? item.label + ' · ' + t(statusKey) : item.label }; }), placeholder: '', disabled: pending }} onContextChange={switchHost} selectedId={page} items={[{ id: 'system', label: t('system'), icon: 'home' }, { id: 'history', label: t('history'), icon: 'queue' }, { id: 'connections', label: t('connections'), icon: 'link' }, { id: 'maintenance', label: t('maintenance'), icon: 'settings' }]} onSelect={id => { setPage(id); setConfirmation(null); }} onServicePress={() => setPage('system')} onAccountPress={() => setPage('settings')} accountState={error ? 'error' : status?.active ? 'loading' : 'default'}><div className="page-layout">{errorView}
  {confirmation && <div role="alert"><Card><Stack gap={4}><Text as="h2" size="title" font="heading">{t(actionKeys[confirmation])}</Text><Text>{t('targetHost')}: {selectedHost?.label}</Text><Text>{t(confirmations[confirmation]!)}</Text><div className="button-row"><Button variant="simple" disabled={pending} onPress={() => setConfirmation(null)}>{t('cancel')}</Button><Button disabled={!allowed(confirmation, status, pending)} loading={pending} onPress={() => void start(confirmation, true)}>{t('continue')}</Button></div></Stack></Card></div>}
  {page === 'system' && <><div className="actions-grid">{operation('check', 'checkDescription')}{operation('build', 'buildDescription')}{operation('diff', 'diffDescription')}{operation('switch', 'switchDescription')}</div>{!status?.system_changes_enabled && <Text tone="muted">{t('enableChanges')}</Text>}<Card><div className="system-grid">{[['hostLabel', status?.host], ['configuration', status?.config_path], ['currentGeneration', status?.current_system ?? t('currentUnavailable')]].map(([label, value]) => <Stack gap={2} key={label}><Text tone="muted">{t(label!)}</Text><div className="path-value"><div className={label === 'hostLabel' ? 'host-value' : undefined}><Text font={label === 'hostLabel' ? 'heading' : 'mono'} size={label === 'hostLabel' ? 'title' : 'md'}>{value}</Text>{label === 'hostLabel' && (status?.config_kind ?? 'flake') !== 'unknown' && <span className="host-badge"><Badge value={t((status?.config_kind ?? 'flake') === 'legacy' ? 'envLegacyShort' : 'envFlake')} /></span>}</div></div></Stack>)}{(['environment'] as const).map(label => (status?.config_kind ?? 'flake') === 'unknown' ? <Stack gap={2} key={label}><Text tone="muted">{t(label)}</Text><Text tone="muted">{t('missingConfiguration')}</Text></Stack> : null)}</div></Card></>}
  {page === 'history' && <HistoryPage jobs={jobs} selected={selected} log={log} host={selectedHost?.label ?? status?.host ?? ''} language={language} t={t} onSelect={setSelected} onSystem={() => setPage('system')}/>}

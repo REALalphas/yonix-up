@@ -13,6 +13,7 @@ export interface Status {
     config_path: string;
     current_system: string | null;
     active: string | null;
+    active_action?: Action | null;
     system_changes_enabled: boolean;
     /** Environment type. Older (flake-only) peers omit it; treat as flake. */
     config_kind?: ConfigKind;
@@ -20,6 +21,34 @@ export interface Status {
 }
 export const actionKeys: Record<Action, string> = { check: 'actionCheck', build: 'actionBuild', diff: 'actionDiff', switch: 'actionSwitch', 'update-inputs': 'actionUpdate', rollback: 'actionRollback', clean: 'actionClean' };
 export const confirmations: Partial<Record<Action, string>> = { switch: 'confirmSwitch', 'update-inputs': 'confirmUpdate', rollback: 'confirmRollback', clean: 'confirmClean' };
+export function actionStatusKey(action?: Action | null): string {
+    switch (action) {
+        case 'check':
+            return 'statusChecking';
+        case 'build':
+        case 'diff':
+            return 'statusBuilding';
+        case 'switch':
+        case 'update-inputs':
+            return 'statusUpdating';
+        case 'rollback':
+            return 'statusRollingBack';
+        case 'clean':
+            return 'statusCleaning';
+        default:
+            return 'working';
+    }
+}
+export function resolveHostStatus(status: Status | null, error: boolean | Error | null, token: string, jobs?: Job[]): string | null {
+    if (!token) return 'connectingShort';
+    if (error) return 'connectionOffline';
+    if (!status) return 'connectingShort';
+    if (status.active) {
+        const action = status.active_action ?? (jobs ? jobs.find(j => j.id === status.active)?.action : null);
+        return actionStatusKey(action);
+    }
+    return null;
+}
 export function allowed(action: Action, status: Status | null, pending: boolean) { return !!status && !status.active && !pending && (status.system_changes_enabled || !['switch', 'rollback', 'clean'].includes(action)) && (action !== 'update-inputs' || (status.config_kind ?? 'flake') === 'flake'); }
 export class ApiError extends Error {
     constructor(public readonly status: number, message: string) {

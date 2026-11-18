@@ -117,5 +117,10 @@
   "pairingPasteLink": "Paste a pairing link here",
   "pairingCode": "Code",
   "pairingCodePlaceholder": "6 digits",
-  "testConnection": "Test connection"
+  "testConnection": "Test connection",
+  "statusChecking": "Checking",
+  "statusBuilding": "Building",
+  "statusUpdating": "Updating",
+  "statusRollingBack": "Rolling back",
+  "statusCleaning": "Cleaning"
 }

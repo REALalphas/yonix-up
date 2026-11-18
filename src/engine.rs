@@ -60,6 +60,8 @@ pub struct Status {
     pub system_changes_enabled: bool,
     pub active: Option<String>,
     #[serde(default)]
+    pub active_action: Option<Action>,
+    #[serde(default)]
     pub cache: Option<CacheStatus>,
     /// Environment type detected from `config_path`. Defaults to flake so
     /// that statuses from older (flake-only) peers still deserialize.
@@ -291,6 +293,9 @@ impl Engine {
 
     pub fn status(&self) -> Status {
         let inner = self.inner.lock().unwrap();
+        let active_action = inner.active.as_ref().and_then(|id| {
+            inner.jobs.iter().find(|j| &j.id == id).map(|j| j.action)
+        });
         Status {
             cache: self.config.cache.as_ref().map(|cache| CacheStatus {
                 url: cache.url.clone(),
@@ -304,6 +309,7 @@ impl Engine {
             current_system: fs::read_link("/run/current-system").ok(),
             system_changes_enabled: self.config.privileged_helper.is_some(),
             active: inner.active.clone(),
+            active_action,
             config_kind: self.config.config_kind(),
             needs_restart: inner.needs_restart,
         }

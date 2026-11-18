@@ -117,5 +117,10 @@
   "pairingPasteLink": "在此粘贴配对链接",
   "pairingCode": "验证码",
   "pairingCodePlaceholder": "6 位数字",
-  "testConnection": "测试连接"
+  "testConnection": "测试连接",
+  "statusChecking": "检查中",
+  "statusBuilding": "构建中",
+  "statusUpdating": "更新中",
+  "statusRollingBack": "回滚中",
+  "statusCleaning": "清理中"
 }

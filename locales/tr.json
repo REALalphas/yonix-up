@@ -117,5 +117,10 @@
   "pairingPasteLink": "Eşleştirme bağlantısını buraya yapıştırın",
   "pairingCode": "Kod",
   "pairingCodePlaceholder": "6 hane",
-  "testConnection": "Bağlantıyı sına"
+  "testConnection": "Bağlantıyı sına",
+  "statusChecking": "Kontrol ediliyor",
+  "statusBuilding": "Derleniyor",
+  "statusUpdating": "Güncelleniyor",
+  "statusRollingBack": "Geri alınıyor",
+  "statusCleaning": "Temizleniyor"
 }

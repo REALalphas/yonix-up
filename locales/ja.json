@@ -117,5 +117,10 @@
   "pairingPasteLink": "ペアリングリンクをここに貼り付け",
   "pairingCode": "コード",
   "pairingCodePlaceholder": "6桁の数字",
-  "testConnection": "接続をテスト"
+  "testConnection": "接続をテスト",
+  "statusChecking": "確認中",
+  "statusBuilding": "ビルド中",
+  "statusUpdating": "更新中",
+  "statusRollingBack": "ロールバック中",
+  "statusCleaning": "クリーンアップ中"
 }

@@ -117,5 +117,10 @@
   "pairingPasteLink": "Вставте сюди посилання для підключення",
   "pairingCode": "Код",
   "pairingCodePlaceholder": "6 цифр",
-  "testConnection": "Перевірити з'єднання"
+  "testConnection": "Перевірити з'єднання",
+  "statusChecking": "Перевірка",
+  "statusBuilding": "Збирання",
+  "statusUpdating": "Оновлення",
+  "statusRollingBack": "Відкочування",
+  "statusCleaning": "Очищення"
 }
