@@ -65,6 +65,10 @@ pub struct Status {
     /// that statuses from older (flake-only) peers still deserialize.
     #[serde(default)]
     pub config_kind: crate::config::ConfigKind,
+    /// A switch installed a new version and the server will restart itself
+    /// once the current operation finishes.
+    #[serde(default)]
+    pub needs_restart: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -221,6 +225,9 @@ fn legacy_plan(config: &Config, action: Action) -> Result<Vec<Step>> {
 struct Inner {
     jobs: Vec<Job>,
     active: Option<String>,
+    /// Set after a successful Switch when the activated system contains a
+    /// different yonix binary than the one currently running.
+    needs_restart: bool,
 }
 #[derive(Clone)]
 pub struct Engine {
@@ -268,7 +275,7 @@ impl Engine {
         let engine = Self {
             connections: Arc::new(crate::peers::Connections::open(&config)?),
             config,
-            inner: Arc::new(Mutex::new(Inner { jobs, active: None })),
+            inner: Arc::new(Mutex::new(Inner { jobs, active: None, needs_restart: false })),
             _lock: Arc::new(lock),
         };
         engine.save(&engine.inner.lock().unwrap())?;
@@ -283,6 +290,7 @@ impl Engine {
     }
 
     pub fn status(&self) -> Status {
+        let inner = self.inner.lock().unwrap();
         Status {
             cache: self.config.cache.as_ref().map(|cache| CacheStatus {
                 url: cache.url.clone(),
@@ -295,9 +303,16 @@ impl Engine {
             config_path: self.config.config_path.clone(),
             current_system: fs::read_link("/run/current-system").ok(),
             system_changes_enabled: self.config.privileged_helper.is_some(),
-            active: self.inner.lock().unwrap().active.clone(),
+            active: inner.active.clone(),
             config_kind: self.config.config_kind(),
+            needs_restart: inner.needs_restart,
         }
+    }
+
+    /// Whether the server should re-exec itself because a Switch installed a
+    /// newer version of the binary.
+    pub fn needs_restart(&self) -> bool {
+        self.inner.lock().unwrap().needs_restart
     }
     pub fn jobs(&self) -> Vec<Job> {
         self.inner
@@ -374,7 +389,8 @@ impl Engine {
             let result = execute(&engine.config, steps, log);
             let mut inner = engine.inner.lock().unwrap();
             let job = inner.jobs.iter_mut().find(|j| j.id == id).unwrap();
-            job.status = if result.is_ok() {
+            let succeeded = result.is_ok();
+            job.status = if succeeded {
                 "succeeded"
             } else {
                 "failed"
@@ -383,12 +399,35 @@ impl Engine {
             job.error = result.err().map(|e| format!("{e:#}"));
             job.finished = Some(now());
             inner.active = None;
+            if succeeded && action == Action::Switch && binary_changed() {
+                eprintln!("Switch installed a new yonix binary; scheduling restart");
+                inner.needs_restart = true;
+            }
             if let Err(error) = engine.save(&inner) {
                 eprintln!("Cannot persist job result: {error:#}");
             }
         });
         Ok(job)
     }
+}
+
+/// Detect whether the running yonix binary differs from the one in the
+/// newly activated NixOS system. After `nixos-rebuild switch` the symlink
+/// `/run/current-system` points to the new generation; we resolve our own
+/// exe and the new system's yonix and compare their Nix store paths.
+fn binary_changed() -> bool {
+    let running = match fs::canonicalize("/proc/self/exe") {
+        Ok(path) => path,
+        Err(_) => return false,
+    };
+    let activated = PathBuf::from("/run/current-system/sw/bin/yonix");
+    let new = match fs::canonicalize(&activated) {
+        Ok(path) => path,
+        // Not every system installs yonix into the system profile; if the
+        // symlink is missing we cannot know, so play it safe.
+        Err(_) => return false,
+    };
+    running != new
 }
 
 fn execute(config: &Config, steps: Vec<Step>, mut log: File) -> Result<()> {

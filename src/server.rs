@@ -208,15 +208,58 @@ pub async fn run(config: Config) -> Result<()> {
         std::net::IpAddr::V6(address) => format!("[{address}]"),
     };
     eprintln!("Yonix listening on http://{display}:{}", config.port);
+    let restart_engine = engine.clone();
     axum::serve(listener, router(engine, token))
         .with_graceful_shutdown(async {
             let mut terminate =
                 tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
                     .expect("signal handler");
-            tokio::select! { _ = tokio::signal::ctrl_c() => {}, _ = terminate.recv() => {} }
+            tokio::select! {
+                _ = tokio::signal::ctrl_c() => {},
+                _ = terminate.recv() => {},
+                _ = poll_needs_restart(restart_engine) => {},
+            }
         })
         .await?;
-    Ok(())
+    self_update()
+}
+
+/// Poll the engine for a pending self-restart flag. Returns when the flag
+/// is set, which causes the graceful shutdown future to resolve.
+async fn poll_needs_restart(engine: Engine) {
+    loop {
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        if engine.needs_restart() {
+            return;
+        }
+    }
+}
+
+/// Re-exec into the updated binary. If the new binary cannot be found
+/// (e.g. not installed into the system profile), exit cleanly and let
+/// systemd restart us from the existing unit.
+fn self_update() -> Result<()> {
+    let new_binary = std::path::Path::new("/run/current-system/sw/bin/yonix");
+    let resolved = match std::fs::canonicalize(new_binary) {
+        Ok(path) => path,
+        Err(_) => {
+            eprintln!("Cannot resolve new binary; exiting for systemd restart");
+            return Ok(());
+        }
+    };
+    let running = std::fs::canonicalize("/proc/self/exe").ok();
+    if running.as_ref() == Some(&resolved) {
+        // Same binary after all; nothing to re-exec.
+        return Ok(());
+    }
+    eprintln!("Re-executing from {}", resolved.display());
+    let args: Vec<String> = std::env::args().collect();
+    use std::os::unix::process::CommandExt;
+    let err = std::process::Command::new(&resolved)
+        .args(&args[1..])
+        .exec();
+    // Command::exec() only returns on error.
+    Err(anyhow::anyhow!("exec failed: {err}"))
 }
 
 async fn hosts(State(app): State<App>) -> Json<Vec<crate::peers::Host>> {
