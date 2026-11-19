@@ -25,3 +25,12 @@ body { margin:0; }
 @media(max-width:600px) { .operation-details { grid-template-columns:minmax(0,1fr); } }
 
 .application-layout { display:grid; min-height:100dvh; }
+
+.pairing-link-display { background:var(--as-color-surface); border:1px solid var(--as-color-border); border-radius:var(--as-radius-md); padding:var(--as-space-4); cursor:pointer; user-select:all; word-break:break-all; transition:border-color .15s; }
+.pairing-link-display:hover { border-color:var(--as-color-border-strong); }
+.add-connection-card { cursor:pointer; border:2px dashed var(--as-color-border); transition:border-color .15s, background .15s; }
+.add-connection-card:hover { border-color:var(--as-color-border-strong); background:var(--as-color-surface); }
+.advanced-toggle { display:flex; align-items:center; gap:var(--as-space-2); cursor:pointer; user-select:none; }
+.advanced-toggle:hover { opacity:0.8; }
+.advanced-toggle svg { transition:transform .15s; transform:rotate(-90deg); }
+.advanced-toggle.advanced-open svg { transform:rotate(0); }
