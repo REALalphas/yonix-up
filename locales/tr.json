@@ -104,13 +104,11 @@
     "operationId": "İşlem kimliği",
     "tokenStorageError": "Tarayıcı belirteci kaydedemedi. Sayfa kapatılana kadar bağlantı açık kalacak.",
     "copyPairingLink": "Bağlantıyı kopyala",
-    "pairingLinkCopied": "Bağlantı kopyalandı.",
     "pairingLink": "Eşleştirme bağlantısı",
     "pairingLinkPlaceholder": "Eşleştirme bağlantısını veya yalın kodu yapıştırın",
     "pairingOrigin": "Başlatıcı adresi (yalın kod için)",
     "pairingOriginPlaceholder": "http://10.0.0.20:9847",
     "pairingPublicConfirm": "Genel adres üzerinden eşleştir",
-    "pairingPublicHelp": "Bu bağlantıdaki bir yol genel adres kullanıyor. Devam için onaylayın.",
     "pairingAccept": "Kabul et ve eşleştir",
     "pairingPaired": "Ana bilgisayarlar eşleştirildi. Diğer ana bilgisayar Yönetilen ana bilgisayarda.",
     "pairingFailed": "Eşleştirilemedi",
@@ -126,7 +124,6 @@
     "addConnection": "Add connection",
     "addConnectionHelp": "Share a link to pair with another Yonix instance",
     "addOtherInstance": "Add another instance",
-    "pairingShareHelp": "Share this link with the other instance to connect. Click to copy.",
     "back": "Back",
     "advanced": "Advanced"
 }

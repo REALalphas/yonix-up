@@ -104,13 +104,11 @@
     "operationId": "ID операції",
     "tokenStorageError": "Браузер не зміг зберегти токен. Підключення діятиме до закриття сторінки.",
     "copyPairingLink": "Копіювати посилання",
-    "pairingLinkCopied": "Посилання скопійовано.",
     "pairingLink": "Посилання для підключення",
     "pairingLinkPlaceholder": "Вставте посилання для підключення або код вручну",
     "pairingOrigin": "Адреса ініціатора (для введення коду вручну)",
     "pairingOriginPlaceholder": "http://10.0.0.20:9847",
     "pairingPublicConfirm": "Підключатися через публічну адресу",
-    "pairingPublicHelp": "У посиланні вказано публічну адресу. Підтвердьте, щоб продовжити.",
     "pairingAccept": "Підключити хост",
     "pairingPaired": "Хост підключено. Він тепер доступний у списку «Керований хост».",
     "pairingFailed": "Не вдалося підключити хост",
@@ -126,7 +124,6 @@
     "addConnection": "Add connection",
     "addConnectionHelp": "Share a link to pair with another Yonix instance",
     "addOtherInstance": "Add another instance",
-    "pairingShareHelp": "Share this link with the other instance to connect. Click to copy.",
     "back": "Back",
     "advanced": "Advanced"
 }

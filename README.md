@@ -27,6 +27,8 @@ Comprehensive guides are available in the [`docs/`](docs/) directory:
 
 ## Install on NixOS
 
+For a fresh system, use the [live ISO installer](docs/live-installer.md).
+
 Add Yonix to your flake inputs:
 
 ```nix

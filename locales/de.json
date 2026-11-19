@@ -104,13 +104,11 @@
     "operationId": "Vorgangs-ID",
     "tokenStorageError": "Der Browser konnte das Token nicht speichern. Die Verbindung bleibt bis zum Schließen der Seite bestehen.",
     "copyPairingLink": "Link kopieren",
-    "pairingLinkCopied": "Link kopiert.",
     "pairingLink": "Kopplungslink",
     "pairingLinkPlaceholder": "Kopplungslink oder Blankocode einfügen",
     "pairingOrigin": "Initiatoradresse (für Blankocode)",
     "pairingOriginPlaceholder": "http://10.0.0.20:9847",
     "pairingPublicConfirm": "Über öffentliche Adresse koppeln",
-    "pairingPublicHelp": "Ein Pfad in diesem Link nutzt eine öffentliche Adresse. Trotzdem bestätigen.",
     "pairingAccept": "Annehmen und koppeln",
     "pairingPaired": "Hosts gekoppelt. Der andere Host ist nun unter Verwalteter Host verfügbar.",
     "pairingFailed": "Koppeln fehlgeschlagen",
@@ -126,7 +124,6 @@
     "addConnection": "Add connection",
     "addConnectionHelp": "Share a link to pair with another Yonix instance",
     "addOtherInstance": "Add another instance",
-    "pairingShareHelp": "Share this link with the other instance to connect. Click to copy.",
     "back": "Back",
     "advanced": "Advanced"
 }

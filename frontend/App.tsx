@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { AppShell, Badge, Button, Card, Icon, Select, Stack, Text, TextInput } from '@alpha/react';
 import { api, ApiError, allowed, actionKeys, confirmations, storedToken, saveToken, clearToken, type Action, type Job, type Status, type Host, hostPath, resolveHostStatus } from './model';
-import { ConnectionsPage } from './Connections';
+import { ConnectionsPage, type PairingSession } from './Connections';
 import { HistoryPage } from './History';
 import { catalogs, names, resolveLanguage, storedLanguage } from './i18n';
 export function App() {
@@ -9,6 +9,7 @@ export function App() {
     const language = resolveLanguage(preference, browserLanguages), t = (key: string) => catalogs[language][key] ?? catalogs.en[key] ?? key;
     const [token, setToken] = useState(storedToken), [input, setInput] = useState(''), [status, setStatus] = useState<Status | null>(null), [jobs, setJobs] = useState<Job[]>([]), [selected, setSelected] = useState<string | null>(null), [log, setLog] = useState(''), [error, setError] = useState<Error | null>(null), [pending, setPending] = useState(false), [confirmation, setConfirmation] = useState<Action | null>(null), [page, setPage] = useState('system');
     const session = useRef(0);
+    const pairingSession = useRef<PairingSession>({ invite: null, receivedPairs: null });
     const newestJob = useRef<string | null>(null);
     const [hosts, setHosts] = useState<Host[]>([]);
     const [host, setHost] = useState('local');
@@ -100,7 +101,7 @@ export function App() {
         void refresh();
         return () => { controller.abort(); clearTimeout(timer); };
     }, [token, host, selected, page]);
-    function logout() { session.current++; clearToken(); newestJob.current = null; setToken(''); setStatus(null); setJobs([]); setSelected(null); setLog(''); setConfirmation(null); setError(null); setInput(''); setPending(false); setHosts([]); setHost('local'); setPage('system'); }
+    function logout() { session.current++; pairingSession.current = { invite: null, receivedPairs: null }; clearToken(); newestJob.current = null; setToken(''); setStatus(null); setJobs([]); setSelected(null); setLog(''); setConfirmation(null); setError(null); setInput(''); setPending(false); setHosts([]); setHost('local'); setPage('system'); }
     function reportError(value: unknown) {
         const failure = value instanceof Error ? value : new Error(String(value));
         if (failure instanceof ApiError && failure.status === 401) logout();
@@ -161,7 +162,7 @@ export function App() {
  {page === 'system' && <><div className="actions-grid">{operation('check', 'checkDescription')}{operation('build', 'buildDescription')}{operation('diff', 'diffDescription')}{operation('switch', 'switchDescription')}</div>{!status?.system_changes_enabled && <Text tone="muted">{t('enableChanges')}</Text>}<Card><div className="system-grid">{[['hostLabel', status?.host], ['configuration', status?.config_path], ['currentGeneration', status?.current_system ?? t('currentUnavailable')]].map(([label, value]) => <Stack gap={2} key={label}><Text tone="muted">{t(label!)}</Text><div className="path-value"><div className={label === 'hostLabel' ? 'host-value' : undefined}><Text font={label === 'hostLabel' ? 'heading' : 'mono'} size={label === 'hostLabel' ? 'title' : 'md'}>{value}</Text>{label === 'hostLabel' && (status?.config_kind ?? 'flake') !== 'unknown' && <span className="host-badge"><Badge value={t((status?.config_kind ?? 'flake') === 'legacy' ? 'envLegacyShort' : 'envFlake')} /></span>}</div></div></Stack>)}{(['environment'] as const).map(label => (status?.config_kind ?? 'flake') === 'unknown' ? <Stack gap={2} key={label}><Text tone="muted">{t(label)}</Text><Text tone="muted">{t('missingConfiguration')}</Text></Stack> : null)}</div></Card></>}
  {page === 'history' && <HistoryPage jobs={jobs} selected={selected} log={log} host={selectedHost?.label ?? status?.host ?? ''} language={language} t={t} onSelect={setSelected} onSystem={() => setPage('system')}/>}
  {page === 'maintenance' && <><div className="actions-grid">{operation('update-inputs', 'updateInputs')}{operation('rollback', 'rollback')}{operation('clean', 'clean')}</div>{!status?.system_changes_enabled && <Text tone="muted">{t('enableChanges')}</Text>}<Card><Stack gap={3}><Text as="h2" size="title" font="heading" weight="medium">{t('session')}</Text><Button variant="simple" onPress={logout}>{t('logout')}</Button></Stack></Card></>}
- {page === 'connections' && <ConnectionsPage token={token} gateway={gateway ?? ''} t={t} onAuthenticationError={reportError} onChange={async () => { const next = await api<Host[]>(token, 'hosts'); setHosts(next); if (!next.some(item => item.id === host)) switchHost('local'); }}/>}
+ {page === 'connections' && <ConnectionsPage token={token} gateway={gateway ?? ''} pairingSession={pairingSession.current} t={t} onAuthenticationError={reportError} onChange={async () => { const next = await api<Host[]>(token, 'hosts'); setHosts(next); if (!next.some(item => item.id === host)) switchHost('local'); }}/>}
  {page === 'settings' && <Stack gap={5}><Card><Stack gap={5}>{languageSelect}<Text tone="secondary">{status?.config_path}</Text></Stack></Card>{status?.cache && <Card><Stack gap={4}><Text as="h2" size="title" font="heading">{t('binaryCache')}</Text><Text tone="secondary">{t('cacheDescription')}</Text><div className="path-value"><Text font="mono">{status.cache.url}</Text></div><Text tone="muted">{t('cachePublicKey')}</Text><div className="path-value"><Text font="mono">{status.cache.public_key ?? t('unavailable')}</Text></div></Stack></Card>}</Stack>}
  </div></AppShell></div>;
 }

@@ -104,13 +104,11 @@
     "operationId": "操作 ID",
     "tokenStorageError": "浏览器无法保存令牌。连接将保持到页面关闭。",
     "copyPairingLink": "复制链接",
-    "pairingLinkCopied": "链接已复制。",
     "pairingLink": "配对链接",
     "pairingLinkPlaceholder": "粘贴配对链接或裸码",
     "pairingOrigin": "发起方地址（裸码用）",
     "pairingOriginPlaceholder": "http://10.0.0.20:9847",
     "pairingPublicConfirm": "通过公网地址配对",
-    "pairingPublicHelp": "此链接中的一条路径使用公网地址。确认后继续。",
     "pairingAccept": "接受并配对",
     "pairingPaired": "主机已配对。另一台主机现已在受管主机中。",
     "pairingFailed": "配对失败",
@@ -126,7 +124,6 @@
     "addConnection": "Add connection",
     "addConnectionHelp": "Share a link to pair with another Yonix instance",
     "addOtherInstance": "Add another instance",
-    "pairingShareHelp": "Share this link with the other instance to connect. Click to copy.",
     "back": "Back",
     "advanced": "Advanced"
 }

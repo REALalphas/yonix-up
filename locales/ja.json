@@ -104,13 +104,11 @@
     "operationId": "操作 ID",
     "tokenStorageError": "ブラウザーでトークンを保存できませんでした。ページを閉じるまで接続は維持されます。",
     "copyPairingLink": "リンクをコピー",
-    "pairingLinkCopied": "リンクをコピーしました。",
     "pairingLink": "ペアリングリンク",
     "pairingLinkPlaceholder": "ペアリングリンクまたはベアコードを貼り付け",
     "pairingOrigin": "開始者のアドレス（ベアコード用）",
     "pairingOriginPlaceholder": "http://10.0.0.20:9847",
     "pairingPublicConfirm": "パブリックアドレスでペアリング",
-    "pairingPublicHelp": "このリンクの経路にパブリックアドレスが含まれます。続行するには確認してください。",
     "pairingAccept": "受け入れてペアリング",
     "pairingPaired": "ホストをペアリングしました。他のホストが管理ホストで利用可能です。",
     "pairingFailed": "ペアリングできませんでした",
@@ -126,7 +124,6 @@
     "addConnection": "Add connection",
     "addConnectionHelp": "Share a link to pair with another Yonix instance",
     "addOtherInstance": "Add another instance",
-    "pairingShareHelp": "Share this link with the other instance to connect. Click to copy.",
     "back": "Back",
     "advanced": "Advanced"
 }

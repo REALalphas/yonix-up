@@ -9,6 +9,9 @@
         "aarch64-linux"
       ];
       forAllSystems = nixpkgs.lib.genAttrs systems;
+      installerSystem = "x86_64-linux";
+      yonixUrl = "github:REALalphas/yonix-up" + nixpkgs.lib.optionalString (self ? rev) "/${self.rev}";
+      nixpkgsUrl = "github:NixOS/nixpkgs/${nixpkgs.rev}";
     in
     {
       packages = forAllSystems (
@@ -21,7 +24,25 @@
           yonix-headless = yonix.override { withGui = false; };
           default = yonix;
         }
+        // nixpkgs.lib.optionalAttrs (system == installerSystem) {
+          installer = pkgs.callPackage ./nix/installer.nix { inherit yonixUrl nixpkgsUrl; };
+          installer-iso = self.nixosConfigurations.yonix-live.config.system.build.isoImage;
+        }
       );
+      apps.${installerSystem}.install = {
+        type = "app";
+        program = "${self.packages.${installerSystem}.installer}/bin/yonix-install";
+      };
+      nixosConfigurations.yonix-live = nixpkgs.lib.nixosSystem {
+        system = installerSystem;
+        modules = [
+          "${nixpkgs}/nixos/modules/installer/cd-dvd/installation-cd-minimal.nix"
+          {
+            isoImage.edition = "yonix";
+            environment.systemPackages = [ self.packages.${installerSystem}.installer ];
+          }
+        ];
+      };
       nixosModules.default = import ./nix/module.nix { inherit self; };
       devShells = forAllSystems (
         system:

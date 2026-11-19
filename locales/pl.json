@@ -104,13 +104,11 @@
     "operationId": "ID operacji",
     "tokenStorageError": "Przeglądarka nie mogła zapisać tokenu. Połączenie pozostanie aktywne do zamknięcia strony.",
     "copyPairingLink": "Kopiuj link",
-    "pairingLinkCopied": "Link skopiowany.",
     "pairingLink": "Link parowania",
     "pairingLinkPlaceholder": "Wklej link parowania lub sam kod",
     "pairingOrigin": "Adres inicjatora (dla samego kodu)",
     "pairingOriginPlaceholder": "http://10.0.0.20:9847",
     "pairingPublicConfirm": "Paruj przez adres publiczny",
-    "pairingPublicHelp": "Ścieżka w tym linku używa adresu publicznego. Potwierdź, aby kontynuować.",
     "pairingAccept": "Akceptuj i sparuj",
     "pairingPaired": "Hosty sparowane. Drugi host jest w Host zarządzany.",
     "pairingFailed": "Nie udało się sparować",
@@ -126,7 +124,6 @@
     "addConnection": "Add connection",
     "addConnectionHelp": "Share a link to pair with another Yonix instance",
     "addOtherInstance": "Add another instance",
-    "pairingShareHelp": "Share this link with the other instance to connect. Click to copy.",
     "back": "Back",
     "advanced": "Advanced"
 }

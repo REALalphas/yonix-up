@@ -104,13 +104,11 @@
     "operationId": "ID da operação",
     "tokenStorageError": "O navegador não conseguiu salvar o token. A conexão continuará ativa até fechar a página.",
     "copyPairingLink": "Copiar link",
-    "pairingLinkCopied": "Link copiado.",
     "pairingLink": "Link de emparelhamento",
     "pairingLinkPlaceholder": "Cole o link de emparelhamento ou um código avulso",
     "pairingOrigin": "Endereço do iniciador (para código avulso)",
     "pairingOriginPlaceholder": "http://10.0.0.20:9847",
     "pairingPublicConfirm": "Emparelhar por endereço público",
-    "pairingPublicHelp": "Um caminho deste link usa endereço público. Confirme para continuar.",
     "pairingAccept": "Aceitar e emparelhar",
     "pairingPaired": "Hosts emparelhados. O outro host está em Host gerenciado.",
     "pairingFailed": "Não foi possível emparelhar",
@@ -126,7 +124,6 @@
     "addConnection": "Add connection",
     "addConnectionHelp": "Share a link to pair with another Yonix instance",
     "addOtherInstance": "Add another instance",
-    "pairingShareHelp": "Share this link with the other instance to connect. Click to copy.",
     "back": "Back",
     "advanced": "Advanced"
 }

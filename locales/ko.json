@@ -104,13 +104,11 @@
     "operationId": "작업 ID",
     "tokenStorageError": "브라우저에 토큰을 저장하지 못했습니다. 페이지를 닫을 때까지 연결이 유지됩니다.",
     "copyPairingLink": "링크 복사",
-    "pairingLinkCopied": "링크가 복사되었습니다.",
     "pairingLink": "페어링 링크",
     "pairingLinkPlaceholder": "페어링 링크 또는 베어 코드를 붙여넣기",
     "pairingOrigin": "시작 호스트 주소(베어 코드용)",
     "pairingOriginPlaceholder": "http://10.0.0.20:9847",
     "pairingPublicConfirm": "공용 주소로 페어링",
-    "pairingPublicHelp": "이 링크의 경로에 공용 주소가 있습니다. 계속하려면 확인하세요.",
     "pairingAccept": "수락하고 페어링",
     "pairingPaired": "호스트가 페어링되었습니다. 다른 호스트가 관리 호스트에 표시됩니다.",
     "pairingFailed": "페어링하지 못했습니다",
@@ -126,7 +124,6 @@
     "addConnection": "Add connection",
     "addConnectionHelp": "Share a link to pair with another Yonix instance",
     "addOtherInstance": "Add another instance",
-    "pairingShareHelp": "Share this link with the other instance to connect. Click to copy.",
     "back": "Back",
     "advanced": "Advanced"
 }

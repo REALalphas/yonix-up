@@ -104,13 +104,11 @@
     "operationId": "ID de l’opération",
     "tokenStorageError": "Le navigateur n’a pas pu enregistrer le jeton. La connexion restera active jusqu’à la fermeture de la page.",
     "copyPairingLink": "Copier le lien",
-    "pairingLinkCopied": "Lien copié.",
     "pairingLink": "Lien d'appairage",
     "pairingLinkPlaceholder": "Collez le lien d'appairage ou un code seul",
     "pairingOrigin": "Adresse de l'initiateur (pour un code seul)",
     "pairingOriginPlaceholder": "http://10.0.0.20:9847",
     "pairingPublicConfirm": "Appairer via une adresse publique",
-    "pairingPublicHelp": "Un chemin de ce lien utilise une adresse publique. Confirmez pour continuer.",
     "pairingAccept": "Accepter et appairer",
     "pairingPaired": "Hôtes appairés. L'autre hôte est disponible dans Hôte géré.",
     "pairingFailed": "Appairage impossible",
@@ -126,7 +124,6 @@
     "addConnection": "Add connection",
     "addConnectionHelp": "Share a link to pair with another Yonix instance",
     "addOtherInstance": "Add another instance",
-    "pairingShareHelp": "Share this link with the other instance to connect. Click to copy.",
     "back": "Back",
     "advanced": "Advanced"
 }
