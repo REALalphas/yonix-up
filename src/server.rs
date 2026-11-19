@@ -209,57 +209,57 @@ pub async fn run(config: Config) -> Result<()> {
     };
     eprintln!("Yonix listening on http://{display}:{}", config.port);
     let restart_engine = engine.clone();
-    axum::serve(listener, router(engine, token))
-        .with_graceful_shutdown(async {
-            let mut terminate =
-                tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-                    .expect("signal handler");
-            tokio::select! {
-                _ = tokio::signal::ctrl_c() => {},
-                _ = terminate.recv() => {},
-                _ = poll_needs_restart(restart_engine) => {},
+    let mut interrupt = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;
+    let mut terminate = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
+    let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
+    let server = async move {
+        axum::serve(listener, router(engine, token))
+            .with_graceful_shutdown(async move {
+                let _ = shutdown_rx.await;
+            })
+            .await
+    };
+    tokio::pin!(server);
+    let target = tokio::select! {
+        biased;
+        _ = interrupt.recv() => None,
+        _ = terminate.recv() => None,
+        target = wait_for_restart(restart_engine) => Some(target),
+        result = &mut server => return result.map_err(Into::into),
+    };
+    let _ = shutdown_tx.send(());
+    if let Some(target) = target {
+        // An explicit stop also takes precedence while requests are draining.
+        tokio::select! {
+            biased;
+            _ = interrupt.recv() => {},
+            _ = terminate.recv() => {},
+            result = &mut server => {
+                result?;
+                return self_update(&target);
             }
-        })
-        .await?;
-    self_update()
+        }
+    }
+    server.await?;
+    Ok(())
 }
 
-/// Poll the engine for a pending self-restart flag. Returns when the flag
-/// is set, which causes the graceful shutdown future to resolve.
-async fn poll_needs_restart(engine: Engine) {
+async fn wait_for_restart(engine: Engine) -> std::path::PathBuf {
     loop {
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-        if engine.needs_restart() {
-            return;
+        if let Some(target) = engine.restart_target() {
+            return target;
         }
     }
 }
 
-/// Re-exec into the updated binary. If the new binary cannot be found
-/// (e.g. not installed into the system profile), exit cleanly and let
-/// systemd restart us from the existing unit.
-fn self_update() -> Result<()> {
-    let new_binary = std::path::Path::new("/run/current-system/sw/bin/yonix");
-    let resolved = match std::fs::canonicalize(new_binary) {
-        Ok(path) => path,
-        Err(_) => {
-            eprintln!("Cannot resolve new binary; exiting for systemd restart");
-            return Ok(());
-        }
-    };
-    let running = std::fs::canonicalize("/proc/self/exe").ok();
-    if running.as_ref() == Some(&resolved) {
-        // Same binary after all; nothing to re-exec.
-        return Ok(());
-    }
-    eprintln!("Re-executing from {}", resolved.display());
-    let args: Vec<String> = std::env::args().collect();
+fn self_update(target: &std::path::Path) -> Result<()> {
     use std::os::unix::process::CommandExt;
-    let err = std::process::Command::new(&resolved)
-        .args(&args[1..])
+    eprintln!("Re-executing from {}", target.display());
+    let err = std::process::Command::new(target)
+        .args(std::env::args_os().skip(1))
         .exec();
-    // Command::exec() only returns on error.
-    Err(anyhow::anyhow!("exec failed: {err}"))
+    Err(anyhow::anyhow!("Cannot exec {}: {err}", target.display()))
 }
 
 async fn hosts(State(app): State<App>) -> Json<Vec<crate::peers::Host>> {

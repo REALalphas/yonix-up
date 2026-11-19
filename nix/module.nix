@@ -300,7 +300,7 @@ in
       wantedBy = [ "multi-user.target" ];
       after = [ "nix-daemon.socket" ];
       # Do not kill an activation job when the switch updates Yonix itself.
-      # The new daemon version starts on the next explicit restart or boot.
+      # Yonix can re-exec after its switch job has recorded the result.
       restartIfChanged = false;
       stopIfChanged = false;
       path = [

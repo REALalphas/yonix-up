@@ -90,6 +90,8 @@ pkgs.testers.runNixOSTest {
     activation_flake = "{ outputs = { self }: { nixosConfigurations.test.config.system.build = { toplevel = " + store_string(current) + "; nixos-rebuild = " + store_string("${pkgs.nixos-rebuild}") + "; }; }; }"
     machine.succeed("cat > /home/operator/nixos/flake.nix <<'YONIX_FLAKE'\n" + activation_flake + "\nYONIX_FLAKE")
     machine.succeed("su - operator -c 'yonix switch --yes'")
+    status = json.loads(machine.succeed("su - operator -c 'yonix status'"))
+    assert not status["needs_restart"], status
     switch_id = json.loads(machine.succeed("su - operator -c 'yonix history'"))[0]["id"]
     assert "Btrfs maintenance (switch)" in machine.succeed("su - operator -c 'yonix logs " + switch_id + "'")
     machine.succeed("test -e /run/yonix-bootloader-called")
@@ -130,6 +132,7 @@ pkgs.testers.runNixOSTest {
     machine.wait_for_unit("yonix.service")
     machine.wait_for_open_port(9847)
     history = json.loads(machine.succeed("su - operator -c 'yonix history'"))
+    assert "Re-executing from" not in machine.succeed("journalctl -u yonix.service -o cat")
     # Legacy update-inputs is rejected before a job is created.
     assert sorted(job["action"] for job in history) == sorted([
         "check", "build", "switch", "rollback", "clean", "rollback", "clean"

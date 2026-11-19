@@ -64,7 +64,7 @@ rustPlatform.buildRustPackage {
   # wrapGAppsHook wraps the GUI build; headless needs its own PATH wrapper.
   # nixos-rebuild covers legacy check/build plans outside the systemd service.
   postFixup = ''
-    wrapProgram $out/bin/yonix --prefix PATH : ${
+    wrapProgram $out/bin/yonix --set YONIX_LAUNCHER "$out/bin/yonix" --prefix PATH : ${
       lib.makeBinPath (
         [
           nix

@@ -227,9 +227,7 @@ fn legacy_plan(config: &Config, action: Action) -> Result<Vec<Step>> {
 struct Inner {
     jobs: Vec<Job>,
     active: Option<String>,
-    /// Set after a successful Switch when the activated system contains a
-    /// different yonix binary than the one currently running.
-    needs_restart: bool,
+    restart_target: Option<PathBuf>,
 }
 #[derive(Clone)]
 pub struct Engine {
@@ -277,7 +275,11 @@ impl Engine {
         let engine = Self {
             connections: Arc::new(crate::peers::Connections::open(&config)?),
             config,
-            inner: Arc::new(Mutex::new(Inner { jobs, active: None, needs_restart: false })),
+            inner: Arc::new(Mutex::new(Inner {
+                jobs,
+                active: None,
+                restart_target: None,
+            })),
             _lock: Arc::new(lock),
         };
         engine.save(&engine.inner.lock().unwrap())?;
@@ -293,9 +295,10 @@ impl Engine {
 
     pub fn status(&self) -> Status {
         let inner = self.inner.lock().unwrap();
-        let active_action = inner.active.as_ref().and_then(|id| {
-            inner.jobs.iter().find(|j| &j.id == id).map(|j| j.action)
-        });
+        let active_action = inner
+            .active
+            .as_ref()
+            .and_then(|id| inner.jobs.iter().find(|j| &j.id == id).map(|j| j.action));
         Status {
             cache: self.config.cache.as_ref().map(|cache| CacheStatus {
                 url: cache.url.clone(),
@@ -311,14 +314,12 @@ impl Engine {
             active: inner.active.clone(),
             active_action,
             config_kind: self.config.config_kind(),
-            needs_restart: inner.needs_restart,
+            needs_restart: inner.restart_target.is_some(),
         }
     }
 
-    /// Whether the server should re-exec itself because a Switch installed a
-    /// newer version of the binary.
-    pub fn needs_restart(&self) -> bool {
-        self.inner.lock().unwrap().needs_restart
+    pub(crate) fn restart_target(&self) -> Option<PathBuf> {
+        self.inner.lock().unwrap().restart_target.clone()
     }
     pub fn jobs(&self) -> Vec<Job> {
         self.inner
@@ -365,6 +366,9 @@ impl Engine {
         if inner.active.is_some() {
             bail!("Another operation is running");
         }
+        if inner.restart_target.is_some() {
+            bail!("Yonix is restarting after the system switch; retry when it is available");
+        }
         let id = SystemTime::now()
             .duration_since(UNIX_EPOCH)?
             .as_nanos()
@@ -396,44 +400,33 @@ impl Engine {
             let mut inner = engine.inner.lock().unwrap();
             let job = inner.jobs.iter_mut().find(|j| j.id == id).unwrap();
             let succeeded = result.is_ok();
-            job.status = if succeeded {
-                "succeeded"
-            } else {
-                "failed"
-            }
-            .into();
+            job.status = if succeeded { "succeeded" } else { "failed" }.into();
             job.error = result.err().map(|e| format!("{e:#}"));
             job.finished = Some(now());
             inner.active = None;
-            if succeeded && action == Action::Switch && binary_changed() {
-                eprintln!("Switch installed a new yonix binary; scheduling restart");
-                inner.needs_restart = true;
-            }
             if let Err(error) = engine.save(&inner) {
                 eprintln!("Cannot persist job result: {error:#}");
+                return;
+            }
+            if succeeded && action == Action::Switch {
+                inner.restart_target = updated_launcher();
+                if inner.restart_target.is_some() {
+                    eprintln!("Switch installed a new Yonix launcher; scheduling restart");
+                }
             }
         });
         Ok(job)
     }
 }
 
-/// Detect whether the running yonix binary differs from the one in the
-/// newly activated NixOS system. After `nixos-rebuild switch` the symlink
-/// `/run/current-system` points to the new generation; we resolve our own
-/// exe and the new system's yonix and compare their Nix store paths.
-fn binary_changed() -> bool {
-    let running = match fs::canonicalize("/proc/self/exe") {
-        Ok(path) => path,
-        Err(_) => return false,
-    };
-    let activated = PathBuf::from("/run/current-system/sw/bin/yonix");
-    let new = match fs::canonicalize(&activated) {
-        Ok(path) => path,
-        // Not every system installs yonix into the system profile; if the
-        // symlink is missing we cannot know, so play it safe.
-        Err(_) => return false,
-    };
-    running != new
+/// The Nix package records its outer launcher because `/proc/self/exe`
+/// points to the wrapped ELF, while the system profile points to its launcher.
+fn updated_launcher() -> Option<PathBuf> {
+    let running = std::env::var_os("YONIX_LAUNCHER")
+        .and_then(|launcher| fs::canonicalize(launcher).ok())
+        .or_else(|| fs::canonicalize("/proc/self/exe").ok())?;
+    let activated = fs::canonicalize("/run/current-system/sw/bin/yonix").ok()?;
+    (running != activated).then_some(activated)
 }
 
 fn execute(config: &Config, steps: Vec<Step>, mut log: File) -> Result<()> {
@@ -511,5 +504,29 @@ pub fn ensure_token(config: &Config) -> Result<String> {
         }
         Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => read_token(config),
         Err(e) => Err(e.into()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pending_restart_rejects_new_jobs() {
+        let temp = tempfile::tempdir().unwrap();
+        let config = Config {
+            config_path: temp.path().join("config"),
+            state_dir: temp.path().join("state"),
+            ..Config::default()
+        };
+        fs::create_dir(&config.config_path).unwrap();
+        fs::write(config.config_path.join("flake.nix"), "{}").unwrap();
+        let engine = Engine::open(config).unwrap();
+        engine.inner.lock().unwrap().restart_target = Some(temp.path().join("yonix"));
+
+        assert!(engine.status().needs_restart);
+        let error = engine.start(Action::Check).unwrap_err();
+        assert!(error.to_string().contains("Yonix is restarting"));
+        assert!(engine.jobs().is_empty());
     }
 }
