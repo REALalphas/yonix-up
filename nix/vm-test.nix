@@ -130,6 +130,8 @@ pkgs.testers.runNixOSTest {
     machine.succeed("mv /home/operator/nixos/flake.nix /tmp/yonix-flake-backup")
     machine.succeed("printf '%s\\n' '{ }' > /home/operator/nixos/configuration.nix")
     machine.succeed("chown operator:users /home/operator/nixos/configuration.nix")
+    # NixOS activation reapplies the home mode, masking the traversal ACL.
+    machine.succeed("setfacl -m g:yonix:--x /home/operator")
     machine.succeed("systemd-tmpfiles --create --prefix=/home/operator/nixos")
     status = json.loads(machine.succeed("su - operator -c 'yonix status'"))
     assert status["config_kind"] == "legacy", status
