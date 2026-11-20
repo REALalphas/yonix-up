@@ -6,6 +6,7 @@
   jq,
   dosfstools,
   e2fsprogs,
+  btrfs-progs,
   openssl,
   tzdata,
   nix,
@@ -23,6 +24,7 @@ writeShellApplication {
     jq
     dosfstools
     e2fsprogs
+    btrfs-progs
     openssl
     nix
     nixos-install

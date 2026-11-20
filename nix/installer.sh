@@ -28,6 +28,48 @@ ask() {
   IFS= read -r -p "$1" reply || die "Input ended."
 }
 
+pick_timezone() {
+  local LC_ALL=C
+  local query country zone magic index
+  local -a matches
+  while true; do
+    ask 'Time zone [Default: UTC] (enter a name or search by city or region): '
+    query=${reply:-UTC}
+    if [[ $query =~ ^[A-Za-z0-9_+-]+(/[A-Za-z0-9_+-]+)*$ && -f $ZONEINFO/$query ]] &&
+       IFS= read -r -N 4 magic < "$ZONEINFO/$query" && [[ $magic == TZif ]]; then
+      timezone=$query
+      return
+    fi
+
+    query=${query,,}
+    query=${query// /_}
+    matches=()
+    while IFS=$'\t' read -r country _ zone _; do
+      if [[ $country != \#* && -n $zone && ${zone,,} == *"$query"* ]]; then
+        matches+=("$zone")
+      fi
+    done < "$ZONEINFO/zone.tab"
+
+    if ((${#matches[@]} == 0)); then
+      printf '%s\n' 'No matching time zones. Try another search.'
+    elif ((${#matches[@]} > 20)); then
+      printf 'Found %d time zones. Enter a more specific search.\n' "${#matches[@]}"
+    else
+      for index in "${!matches[@]}"; do
+        printf '%d) %s\n' "$((index + 1))" "${matches[index]}"
+      done
+      ask 'Choose a number or press Enter to search again: '
+      if [[ $reply =~ ^[1-9][0-9]?$ ]] && ((reply <= ${#matches[@]})); then
+        timezone=${matches[reply - 1]}
+        return
+      fi
+      if [[ -n $reply ]]; then
+        printf '%s\n' 'Invalid selection. Try another search.'
+      fi
+    fi
+  done
+}
+
 disk_info() {
   lsblk --json --tree --bytes --paths --output PATH,KNAME,TYPE,RO,SIZE,MAJ:MIN,SERIAL,WWN,MOUNTPOINTS -- "$disk"
 }
@@ -79,30 +121,35 @@ disk=$(realpath -e -- "$reply") || die "Unknown disk."
 [[ $disk == /dev/* && -b $disk ]] || die "Select a block device under /dev."
 fingerprint=$(check_disk)
 
-ask 'Hostname [nixos]: '
+ask 'Hostname [Default: nixos]: '
 host=${reply:-nixos}
 [[ $host =~ ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$ ]] || die "Invalid hostname."
-ask 'Administrator username [operator]: '
+ask 'Administrator username [Default: operator]: '
 user=${reply:-operator}
 [[ $user =~ ^[a-z_][a-z0-9_-]{0,30}$ && $user != root ]] || die "Invalid username."
-ask 'Time zone [UTC] (for example Europe/Moscow): '
-timezone=${reply:-UTC}
-[[ $timezone =~ ^[A-Za-z0-9_+-]+(/[A-Za-z0-9_+-]+)*$ && -f $ZONEINFO/$timezone ]] ||
-  die "Unknown time zone."
+pick_timezone
 
-printf '%s\n' '1) Console' '2) KDE Plasma' '3) GNOME' '4) Xfce'
-ask 'Environment [1]: '
-case ${reply:-1} in
-  1) desktop=Console; desktop_config='programs.yonix.package = yonix.packages.x86_64-linux.yonix-headless;' ;;
+printf '%s\n' '0) Headless' '1) GNOME' '2) KDE Plasma' '3) Xfce'
+ask 'Environment [Default: 0]: '
+case ${reply:-0} in
+  0) desktop=Headless; desktop_config='programs.yonix.package = yonix.packages.x86_64-linux.yonix-headless;' ;;
+  1) desktop=GNOME; desktop_config='services.displayManager.gdm.enable = true; services.desktopManager.gnome.enable = true;' ;;
   2) desktop='KDE Plasma'; desktop_config='services.displayManager.sddm.enable = true; services.desktopManager.plasma6.enable = true;' ;;
-  3) desktop=GNOME; desktop_config='services.displayManager.gdm.enable = true; services.desktopManager.gnome.enable = true;' ;;
-  4) desktop=Xfce; desktop_config='services.xserver = { enable = true; displayManager.lightdm.enable = true; desktopManager.xfce.enable = true; };' ;;
-  *) die "Choose an environment from 1 to 4." ;;
+  3) desktop=Xfce; desktop_config='services.xserver = { enable = true; displayManager.lightdm.enable = true; desktopManager.xfce.enable = true; };' ;;
+  *) die "Choose an environment from 0 to 3." ;;
 esac
 
-ask 'Root filesystem label [NIXOS]: '
+printf '%s\n' '1) ext4' '2) Btrfs'
+ask 'Root filesystem [Default: 1]: '
+case ${reply:-1} in
+  1) root_fs=ext4; root_mkfs=mkfs.ext4 ;;
+  2) root_fs=btrfs; root_mkfs=mkfs.btrfs ;;
+  *) die "Choose a root filesystem from 1 to 2." ;;
+esac
+
+ask 'Root filesystem label [Default: NIXOS]: '
 root_label=${reply:-NIXOS}
-ask 'EFI filesystem label [NIXBOOT]: '
+ask 'EFI filesystem label [Default: NIXBOOT]: '
 efi_label=${reply:-NIXBOOT}
 [[ $root_label =~ ^[A-Z0-9][A-Z0-9_-]{0,15}$ && $efi_label =~ ^[A-Z0-9][A-Z0-9_-]{0,10}$ &&
    $root_label != "$efi_label" ]] || die "Use distinct uppercase labels (root up to 16 characters, EFI up to 11)."
@@ -115,7 +162,7 @@ swap_description=None
 root_number=2
 
 printf '%s\n' '1) No swap' '2) zram (compressed swap in RAM)' '3) Dedicated swap partition'
-ask 'Swap [1]: '
+ask 'Swap [Default: 1]: '
 case ${reply:-1} in
   1) ;;
   2)
@@ -127,11 +174,11 @@ case ${reply:-1} in
     max_swap=$((disk_bytes / (1024 * 1024 * 1024) - 16))
     ((max_swap >= 1)) || die "The disk is too small for a separate swap partition."
     default_swap=$((max_swap < 4 ? max_swap : 4))
-    ask "Swap partition size in GiB [$default_swap] (max $max_swap): "
+    ask "Swap partition size in GiB [Default: $default_swap] (max $max_swap): "
     swap_gib=${reply:-$default_swap}
     [[ $swap_gib =~ ^[1-9][0-9]{0,8}$ ]] || die "Enter a positive whole number of GiB."
     ((swap_gib <= max_swap)) || die "Swap may use at most $max_swap GiB."
-    ask 'Swap partition label [NIXSWAP]: '
+    ask 'Swap partition label [Default: NIXSWAP]: '
     swap_label=${reply:-NIXSWAP}
     [[ $swap_label =~ ^[A-Z0-9][A-Z0-9_-]{0,14}$ && $swap_label != "$root_label" &&
        $swap_label != "$efi_label" ]] || die "Use a distinct uppercase swap label of up to 15 characters."
@@ -159,7 +206,7 @@ unset password repeat_password
 
 printf '\n%s\n' "Disk: $disk (all existing partitions and data will be erased)" \
   "System: $host · $desktop · $timezone" "Administrator: $user" \
-  "Filesystem labels: $root_label (ext4), $efi_label (EFI)" "Swap: $swap_description" \
+  "Filesystems: $root_fs ($root_label), vfat ($efi_label)" "Swap: $swap_description" \
   "Yonix: switch, rollback and clean enabled for $user and holders of the local API token."
 ask "Type ERASE $disk to continue: "
 [[ $reply == "ERASE $disk" ]] || die "Installation cancelled."
@@ -200,7 +247,7 @@ cat > "$work/configuration.nix" <<CONFIG
   boot.loader.systemd-boot.enable = true;
   boot.loader.efi.canTouchEfiVariables = true;
 
-  fileSystems."/" = { device = "/dev/disk/by-label/$root_label"; fsType = "ext4"; };
+  fileSystems."/" = { device = "/dev/disk/by-label/$root_label"; fsType = "$root_fs"; };
   fileSystems."/boot" = {
     device = "/dev/disk/by-label/$efi_label";
     fsType = "vfat";
@@ -260,7 +307,7 @@ if [[ -n $swap_label ]]; then
   mkswap -L "$swap_label" "$swap_partition"
 fi
 mkfs.fat -F 32 -n "$efi_label" "$efi_partition"
-mkfs.ext4 -L "$root_label" "$root_partition"
+"$root_mkfs" -L "$root_label" "$root_partition"
 udevadm settle
 check_labels
 mount "$root_partition" "$target"
