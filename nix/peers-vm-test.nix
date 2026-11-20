@@ -57,6 +57,7 @@ pkgs.testers.runNixOSTest {
     web.wait_for_unit("yonix.service")
     nas.wait_for_unit("nix-serve.service")
     nas.wait_for_open_port(9848, addr="192.168.1.1")
+    web.wait_for_open_port(9847, addr="192.168.1.2")
     web_token = web.succeed("cat /var/lib/yonix/token").strip()
     nas.succeed("install -o yonix -g yonix -m 600 /dev/null /var/lib/yonix/web-token")
     nas.succeed("printf %s " + shlex.quote(web_token) + " > /var/lib/yonix/web-token")

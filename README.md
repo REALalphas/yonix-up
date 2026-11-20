@@ -10,6 +10,8 @@ that change the system.
 
 ## Install on NixOS
 
+> The [live ISO installer](docs/live-installer.md) covers fresh installations.
+
 Add the flake input and module:
 
 ```nix
@@ -22,6 +24,7 @@ inputs.yonix.inputs.nixpkgs.follows = "nixpkgs";
 
   programs.yonix = {
     enable = true;
+    # The module adds https://yonix.cachix.org automatically.
     configPath = "/etc/nixos";
     allowSystemChanges = false;
   };
@@ -39,31 +42,11 @@ Members of the `yonix` group can use the daemon and edit the configured
 checkout. Use `allowSystemChanges = true` only for administrators. A changed
 NixOS configuration can execute code as root during activation.
 
-The [live ISO installer](docs/live-installer.md) covers fresh installations.
-
 Use `yonix-headless` on servers without GTK:
 
 ```nix
 programs.yonix.package = inputs.yonix.packages.${pkgs.stdenv.hostPlatform.system}.yonix-headless;
 ```
-
-## Speed up builds on older hosts
-
-The included GitHub Actions workflow publishes the `yonix` package closure to
-the official Cachix binary cache. Set the `CACHIX_CACHE` repository variable
-and `CACHIX_AUTH_TOKEN` secret. The NixOS module trusts this cache
-automatically:
-
-```nix
-programs.yonix = {
-  enable = true;
-  # The module adds https://yonix.cachix.org automatically.
-};
-```
-
-The client downloads matching closures instead of compiling them locally.
-See [the cache and GitHub Actions setup](docs/peering.md#populate-a-cache-from-github-actions)
-for the publishing workflow and key verification steps.
 
 ## Daily use
 
