@@ -118,6 +118,9 @@
             config = evaluated.config;
           in
           assert config.services.nix-serve.enable;
+          assert builtins.elem "https://yonix.cachix.org" config.nix.settings.extra-substituters;
+          assert builtins.elem "yonix.cachix.org-1:tuJfS1bMNuVctofrHgbmUcfYcqLfjieOmOI42ccjaqg=" config.nix.settings.extra-trusted-public-keys;
+          assert config.nix.settings.builders-use-substitutes;
           assert config.services.nix-serve.secretKeyFile == "/var/lib/yonix-cache/secret-key";
           assert builtins.elem "http://10.0.0.2:9848" config.nix.settings.extra-substituters;
           assert config.systemd.services.yonix.serviceConfig.User == "yonix";

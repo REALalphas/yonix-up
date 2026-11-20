@@ -47,6 +47,24 @@ Use `yonix-headless` on servers without GTK:
 programs.yonix.package = inputs.yonix.packages.${pkgs.stdenv.hostPlatform.system}.yonix-headless;
 ```
 
+## Speed up builds on older hosts
+
+The included GitHub Actions workflow publishes the `yonix` package closure to
+the official Cachix binary cache. Set the `CACHIX_CACHE` repository variable
+and `CACHIX_AUTH_TOKEN` secret. The NixOS module trusts this cache
+automatically:
+
+```nix
+programs.yonix = {
+  enable = true;
+  # The module adds https://yonix.cachix.org automatically.
+};
+```
+
+The client downloads matching closures instead of compiling them locally.
+See [the cache and GitHub Actions setup](docs/peering.md#populate-a-cache-from-github-actions)
+for the publishing workflow and key verification steps.
+
 ## Daily use
 
 ```console

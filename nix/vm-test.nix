@@ -30,6 +30,7 @@ pkgs.testers.runNixOSTest {
     environment.systemPackages = [
       pkgs.curl
       pkgs.git
+      pkgs.acl
     ];
     environment.etc."yonix-test-flake.nix".text = ''
       {
@@ -61,13 +62,18 @@ pkgs.testers.runNixOSTest {
     start_all()
     machine.wait_for_unit("yonix.service")
     machine.wait_for_open_port(9847)
-    machine.succeed("install -d -o operator -g users /home/operator/nixos")
-    machine.succeed("install -o operator -g users /etc/yonix-test-flake.nix /home/operator/nixos/flake.nix")
+    # Normal-user homes are private by default. Grant the daemon traversal to
+    # this fixture's parent directory before using a checkout below it.
+    machine.succeed("setfacl -m g:yonix:--x /home/operator")
+    machine.succeed("install -d -m 0700 -o operator -g users /home/operator/nixos")
+    machine.succeed("install -m 0600 -o operator -g users /etc/yonix-test-flake.nix /home/operator/nixos/flake.nix")
     # Reproduce the original yonix checkout: the flake imports a Git-ignored config.nix.
     machine.succeed("printf '%s\\n' '{ name = \"yonix-test-system\"; }' > /home/operator/nixos/config.nix")
     machine.succeed("echo config.nix > /home/operator/nixos/.gitignore")
     machine.succeed("chown operator:users /home/operator/nixos/config.nix /home/operator/nixos/.gitignore")
     machine.succeed("su - operator -c 'cd /home/operator/nixos && git init && git add flake.nix .gitignore && nix flake lock path:.'")
+    # The checkout is created after boot, so apply the module's ACL rule now.
+    machine.succeed("systemd-tmpfiles --create --prefix=/home/operator/nixos")
     status = json.loads(machine.succeed("su - operator -c 'yonix status'"))
     assert status["host"] == "test"
     assert status["system_changes_enabled"]
@@ -124,6 +130,7 @@ pkgs.testers.runNixOSTest {
     machine.succeed("mv /home/operator/nixos/flake.nix /tmp/yonix-flake-backup")
     machine.succeed("printf '%s\\n' '{ }' > /home/operator/nixos/configuration.nix")
     machine.succeed("chown operator:users /home/operator/nixos/configuration.nix")
+    machine.succeed("systemd-tmpfiles --create --prefix=/home/operator/nixos")
     status = json.loads(machine.succeed("su - operator -c 'yonix status'"))
     assert status["config_kind"] == "legacy", status
     machine.fail("su - operator -c 'yonix update-inputs --yes'")

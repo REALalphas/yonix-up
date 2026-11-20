@@ -99,6 +99,56 @@ Repeat the publisher/client settings in the opposite direction for bidirectional
 
 Rebuild once to configure the relationship. Subsequent Nix builds automatically check the cache for matching paths. This is on-demand substitution: availability follows the publisher's local store and garbage collection. Source/lock inputs and architecture determine reuse. A cache does not make different configurations identical. Cache failures remain ordinary Nix substitution failures, with the normal local/upstream fallback.
 
+## Populate a cache from GitHub Actions
+
+GitHub Actions' own cache is scoped to workflow runs and is not a Nix
+substituter that an installed NixOS client can query. Use a Nix binary-cache
+service, such as Cachix or a self-hosted Attic/Harmonia instance, and let a
+GitHub Actions job build the exact NixOS system closure and publish it there.
+
+The Yonix NixOS module already trusts the project cache:
+
+```nix
+programs.yonix.enable = true;
+```
+
+It adds `https://yonix.cachix.org` and its signing key to Nix. Set
+`programs.yonix.useOfficialCache = false` to opt out. Standalone Nix clients can
+add the same URL and key manually:
+
+```nix
+nix.settings.extra-substituters = [ "https://yonix.cachix.org" ];
+nix.settings.extra-trusted-public-keys = [
+  "yonix.cachix.org-1:tuJfS1bMNuVctofrHgbmUcfYcqLfjieOmOI42ccjaqg="
+];
+```
+
+The repository includes a publishing workflow at
+`.github/workflows/binary-cache.yml`. Set the `CACHIX_CACHE` repository
+variable and `CACHIX_AUTH_TOKEN` repository secret before enabling it. The
+workflow waits for the `CI` workflow to pass on a push to `main`, then builds
+the public `.#default` and `.#yonix-headless` packages and pushes their
+closures. To
+publish a system configuration instead, change the build target to the same
+flake revision and `nixosConfigurations.<host>.config.system.build.toplevel`
+target used by the client:
+
+```yaml
+- uses: cachix/install-nix-action@v31
+- uses: cachix/cachix-action@v15
+  with:
+    name: ${{ vars.CACHIX_CACHE }}
+    authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+- run: >-
+    nix build ".#nixosConfigurations.${{ vars.NIXOS_HOST }}.config.system.build.toplevel"
+    --no-link --print-out-paths | cachix push "${{ vars.CACHIX_CACHE }}"
+```
+
+After the first successful publish, Nix fetches matching package paths from the
+cache before compiling locally. When the workflow targets a system
+configuration, the same mechanism applies to that system closure. GitHub's
+runner performs the expensive build while the client downloads the result.
+
 This version does not synchronize configuration repositories, schedule updates, or automatically activate systems. Build/check/apply actions are initiated in the selected host's panel.
 
 ## Verification

@@ -7,6 +7,8 @@
 }:
 let
   cfg = config.programs.yonix;
+  officialCacheUrl = "https://yonix.cachix.org";
+  officialCachePublicKey = "yonix.cachix.org-1:tuJfS1bMNuVctofrHgbmUcfYcqLfjieOmOI42ccjaqg=";
   inherit (lib)
     mkOption
     mkEnableOption
@@ -139,6 +141,11 @@ in
       type = types.bool;
       default = false;
       description = "Allow yonix group members and API token holders to request switch, rollback and cleanup through the daemon. Treat them as system administrators: the configured flake can execute code as root during activation.";
+    };
+    useOfficialCache = mkOption {
+      type = types.bool;
+      default = true;
+      description = "Use the official signed Yonix binary cache at https://yonix.cachix.org.";
     };
     peers = mkOption {
       default = { };
@@ -300,10 +307,18 @@ in
       after = [ "yonix-cache-key.service" ];
       requires = [ "yonix-cache-key.service" ];
     };
-    nix.settings.extra-substituters = map (cache: cache.url) (builtins.attrValues cfg.caches);
-    nix.settings.extra-trusted-public-keys = map (cache: cache.publicKey) (
-      builtins.attrValues cfg.caches
+    nix.settings.extra-substituters = lib.unique (
+      lib.optional cfg.useOfficialCache officialCacheUrl
+      ++ map (cache: cache.url) (builtins.attrValues cfg.caches)
     );
+    nix.settings.extra-trusted-public-keys = lib.unique (
+      lib.optional cfg.useOfficialCache officialCachePublicKey
+      ++ map (cache: cache.publicKey) (builtins.attrValues cfg.caches)
+    );
+    # Let remote builders fetch their own dependencies from their substituters.
+    # This avoids sending large dependency closures from a slow client before
+    # the remote build can start.
+    nix.settings.builders-use-substitutes = lib.mkDefault true;
     environment.systemPackages = [ cfg.package ];
     networking.firewall.allowedTCPPorts = lib.optionals cfg.openFirewall [ cfg.port ];
     environment.etc."yonix/config.json".source = json.generate "yonix-config.json" settings;
