@@ -83,6 +83,7 @@ if [ -f fail ]; then exit 7; fi
         cache: None,
         source_mode: "git".into(),
         listen_address,
+        shared_token: false,
     };
     let config_file = root.join("config.json");
     fs::write(&config_file, serde_json::to_vec(&config).unwrap()).unwrap();
@@ -350,6 +351,7 @@ if [ -f fail ]; then exit 7; fi
         cache: None,
         source_mode: "git".into(),
         listen_address: std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
+        shared_token: false,
     };
     let config_file = root.join("config.json");
     fs::write(&config_file, serde_json::to_vec(&config).unwrap()).unwrap();

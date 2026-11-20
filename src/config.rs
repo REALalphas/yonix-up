@@ -16,6 +16,8 @@ pub struct Config {
     #[serde(default = "default_listen_address")]
     pub listen_address: IpAddr,
     pub state_dir: PathBuf,
+    #[serde(default)]
+    pub shared_token: bool,
     pub privileged_helper: Option<PathBuf>,
     pub peers: Vec<crate::peers::Peer>,
     pub cache: Option<Cache>,
@@ -64,6 +66,7 @@ impl Default for Config {
             port: 9847,
             listen_address: default_listen_address(),
             state_dir: state.join("yonix"),
+            shared_token: false,
             privileged_helper: None,
             peers: Vec::new(),
             cache: None,

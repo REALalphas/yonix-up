@@ -113,7 +113,7 @@ The native GTK 4/libadwaita desktop client can also connect to a remote Yonix da
 
 ## Token Management and Revocation
 
-- **Storage**: The daemon stores its API token in the private state directory (`/var/lib/yonix/token` under NixOS), accessible only to the configured user and `root` (mode `0600`).
+- **Storage**. Under NixOS, the daemon stores its API token in `/var/lib/yonix/token`. The `yonix` group can read it (mode `0640`).
 - **Never commit tokens**: Do not place tokens in Nix store expressions or Git repositories.
 - **Revocation**: To invalidate existing sessions:
   1. Stop the service: `sudo systemctl stop yonix`

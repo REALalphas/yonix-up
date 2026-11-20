@@ -71,7 +71,7 @@ pkgs.testers.runNixOSTest {
     status = json.loads(machine.succeed("su - operator -c 'yonix status'"))
     assert status["host"] == "test"
     assert status["system_changes_enabled"]
-    machine.succeed("test $(stat -c %a /var/lib/yonix/token) = 600")
+    machine.succeed("test $(stat -c %a /var/lib/yonix/token) = 640")
     machine.fail("su - nobody -s /bin/sh -c 'cat /var/lib/yonix/token'")
     machine.succeed("test $(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:9847/api/status) = 401")
     machine.succeed("su - operator -c 'yonix check'")
@@ -100,7 +100,12 @@ pkgs.testers.runNixOSTest {
     machine.succeed("printf 'd /var/cache/yonix-clean-fixture 0755 root root m:1d -\\n' > /etc/tmpfiles.d/yonix-clean-fixture.conf")
     machine.succeed("touch -d '3 days ago' /var/cache/yonix-clean-fixture/old /home/operator/.cache/yonix-clean-fixture/old")
     machine.succeed("touch /var/cache/yonix-clean-fixture/recent")
-    machine.succeed("su - operator -c 'yonix clean --yes'")
+    def run_clean():
+        # The VM disk is disposable. Avoid host flushes for every hardlink
+        # while exercising the real Nix store optimisation.
+        machine.succeed("mount -o remount,nobarrier /")
+        machine.succeed("su - operator -c 'yonix clean --yes'")
+    run_clean()
     machine.fail("test -e /var/cache/yonix-clean-fixture/old")
     machine.succeed("test -e /var/cache/yonix-clean-fixture/recent && test -e /home/operator/.cache/yonix-clean-fixture/old")
     # The real maintenance pipeline must be visible through the CLI job log.
@@ -126,7 +131,7 @@ pkgs.testers.runNixOSTest {
     # so this independent legacy rollback has an older generation to select.
     machine.succeed("nix-env --profile /nix/var/nix/profiles/system --set " + current)
     machine.succeed("su - operator -c 'yonix rollback --yes'")
-    machine.succeed("su - operator -c 'yonix clean --yes'")
+    run_clean()
     machine.fail("su - operator -c 'sudo -n id'")
     machine.succeed("systemctl restart yonix")
     machine.wait_for_unit("yonix.service")

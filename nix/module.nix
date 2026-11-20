@@ -14,6 +14,10 @@ let
     mkIf
     ;
   flakeRef = "${lib.optionalString (cfg.sourceMode == "path") "path:"}${cfg.configPath}#${cfg.host}";
+  # ACL rules interpret specifiers and glob characters even in quoted paths.
+  configAclPath = builtins.toJSON (
+    lib.escape [ "*" "?" "[" "]" ] (lib.replaceStrings [ "%" ] [ "%%" ] cfg.configPath)
+  );
   btrfsMaintenance = pkgs.callPackage ./btrfs-maintenance.nix {
     reserveBytes = cfg.btrfs.reserveGiB * 1024 * 1024 * 1024;
   };
@@ -70,6 +74,7 @@ let
     port = cfg.port;
     listen_address = cfg.listenAddress;
     state_dir = "/var/lib/yonix";
+    shared_token = true;
     peers = lib.mapAttrsToList (id: peer: {
       inherit id;
       inherit (peer) label url;
@@ -91,14 +96,15 @@ in
 {
   options.programs.yonix = {
     enable = mkEnableOption "Yonix desktop, CLI and local web service";
+    user = mkOption {
+      type = types.nullOr types.str;
+      default = null;
+      description = "Deprecated. Adds a legacy operator to the yonix group. Use users.users.<name>.extraGroups for group membership.";
+    };
     package = mkOption {
       type = types.package;
       default = self.packages.${pkgs.stdenv.hostPlatform.system}.default;
       description = "Yonix package; use yonix-headless on servers without GTK.";
-    };
-    user = mkOption {
-      type = types.str;
-      description = "Existing local user who owns the configuration and manages Yonix. This user can read the API token.";
     };
     configPath = mkOption {
       type = types.strMatching "/.*";
@@ -132,7 +138,7 @@ in
     allowSystemChanges = mkOption {
       type = types.bool;
       default = false;
-      description = "Allow the configured user and API token holder to switch, roll back and clean via a fixed sudo helper. Treat them as system administrators: the configured flake can execute code as root during activation.";
+      description = "Allow yonix group members and API token holders to request switch, rollback and cleanup through the daemon. Treat them as system administrators: the configured flake can execute code as root during activation.";
     };
     peers = mkOption {
       default = { };
@@ -151,7 +157,7 @@ in
               };
               tokenFile = mkOption {
                 type = types.strMatching "/.*";
-                description = "Runtime file containing the remote API token, mode 0600 or 0400, readable by programs.yonix.user. Never use a Nix path literal or put a token in the store.";
+                description = "Runtime file containing the remote API token, mode 0600 or 0400, readable by the yonix service user. Never use a Nix path literal or put a token in the store.";
               };
             };
           }
@@ -233,6 +239,12 @@ in
     };
   };
   config = mkIf cfg.enable {
+    warnings = lib.optional (cfg.user != null) ''
+      programs.yonix.user is deprecated and will be removed in a future release.
+      Yonix now runs as the shared yonix system user. Add ${cfg.user} to the yonix
+      group with users.users.${cfg.user}.extraGroups = [ "yonix" ], then remove
+      programs.yonix.user.
+    '';
     assertions = [
       {
         assertion = !cfg.cache.enable || cfg.cache.port != cfg.port;
@@ -242,11 +254,15 @@ in
         assertion = !(cfg.peers ? local);
         message = "The Yonix peer id local is reserved.";
       }
-      {
-        assertion =
-          builtins.hasAttr cfg.user config.users.users && config.users.users.${cfg.user}.isNormalUser;
-        message = "programs.yonix.user must name an existing normal user.";
-      }
+    ];
+    users.groups.yonix.members = lib.optional (cfg.user != null) cfg.user;
+    users.users.yonix = {
+      isSystemUser = true;
+      group = "yonix";
+      home = "/var/lib/yonix";
+    };
+    systemd.tmpfiles.rules = [
+      "A+ ${configAclPath} - - - - g:yonix:rwX,d:g:yonix:rwx"
     ];
     services.nix-serve = mkIf cfg.cache.enable {
       enable = true;
@@ -298,7 +314,10 @@ in
     systemd.services.yonix = {
       description = "Yonix NixOS companion";
       wantedBy = [ "multi-user.target" ];
-      after = [ "nix-daemon.socket" ];
+      after = [
+        "nix-daemon.socket"
+        "systemd-tmpfiles-setup.service"
+      ];
       # Do not kill an activation job when the switch updates Yonix itself.
       # Yonix can re-exec after its switch job has recorded the result.
       restartIfChanged = false;
@@ -311,14 +330,17 @@ in
         "/run/wrappers"
       ];
       environment = {
-        HOME = config.users.users.${cfg.user}.home;
+        GIT_CONFIG_COUNT = "1";
+        GIT_CONFIG_KEY_0 = "safe.directory";
+        GIT_CONFIG_VALUE_0 = cfg.configPath;
       };
       serviceConfig = {
-        User = cfg.user;
+        User = "yonix";
+        Group = "yonix";
         ExecStart = "${cfg.package}/bin/yonix serve";
         StateDirectory = "yonix";
-        StateDirectoryMode = "0700";
-        UMask = "0077";
+        StateDirectoryMode = "0770";
+        UMask = "0007";
         Restart = "on-failure";
         RestartSec = 3;
         KillMode = "control-group";
@@ -329,7 +351,7 @@ in
     security.sudo.enable = mkIf cfg.allowSystemChanges true;
     security.sudo.extraRules = lib.optionals cfg.allowSystemChanges [
       {
-        users = [ cfg.user ];
+        users = [ "yonix" ];
         commands =
           map
             (action: {

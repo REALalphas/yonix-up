@@ -7,10 +7,8 @@ pkgs.testers.runNixOSTest {
   name = "yonix-peers-and-cache";
   defaults = { lib, ... }: {
     imports = [ self.nixosModules.default ];
-    users.users.operator.isNormalUser = true;
     programs.yonix = {
       enable = true;
-      user = "operator";
       package = self.packages.${system}.yonix-headless;
       configPath = "/etc/nixos";
       openFirewall = true;
@@ -60,7 +58,7 @@ pkgs.testers.runNixOSTest {
     nas.wait_for_unit("nix-serve.service")
     nas.wait_for_open_port(9848, addr="192.168.1.1")
     web_token = web.succeed("cat /var/lib/yonix/token").strip()
-    nas.succeed("install -o operator -g users -m 600 /dev/null /var/lib/yonix/web-token")
+    nas.succeed("install -o yonix -g yonix -m 600 /dev/null /var/lib/yonix/web-token")
     nas.succeed("printf %s " + shlex.quote(web_token) + " > /var/lib/yonix/web-token")
     auth = '-H "Authorization: Bearer $(cat /var/lib/yonix/token)"'
     status = json.loads(nas.succeed("curl -fsS " + auth + " http://192.168.1.1:9847/api/hosts/web/status"))

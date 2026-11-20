@@ -36,7 +36,7 @@ npm run build
 npm test
 ```
 
-See [Development and verification](README.md#development-and-verification) for Nix package, NixOS module, GTK and disposable VM checks. Tests involving system activation or filesystem maintenance belong in disposable VMs; do not run maintenance commands against your workstation to verify a change. To scan the full Git history for accidentally committed credentials, use the CI command:
+See [Development and verification](docs/development.md) for Nix package, NixOS module, GTK and disposable VM checks. Tests involving system activation or filesystem maintenance belong in disposable VMs; do not run maintenance commands against your workstation to verify a change. To scan the full Git history for accidentally committed credentials, use the CI command:
 
 ```sh
 nix shell --inputs-from . nixpkgs#gitleaks --command gitleaks git --redact --max-archive-depth=2 --log-opts=--all .

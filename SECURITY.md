@@ -12,7 +12,7 @@ Include the affected revision, prerequisites, impact and reproduction steps in a
 
 ## Trust boundaries
 
-- When system-changing actions are enabled, the configured user and anyone holding the gateway token can administer the system. An authorized NixOS configuration can execute code as root during activation.
+- When system-changing actions are enabled, members of the `yonix` group and anyone holding the gateway token can administer the system. An authorized NixOS configuration can execute code as root during activation.
 - The gateway token also grants access to configured peers. Peer tokens, runtime connection files and binary-cache private keys are secrets.
 - The API uses HTTP. Keep it on loopback or a trusted network; use SSH or an encrypted VPN for untrusted networks. Opening the firewall does not add encryption or multi-user authorization.
 - Nix source paths and store contents can be world-readable. Keep credentials outside configuration checkouts and Nix expressions.

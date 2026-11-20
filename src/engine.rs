@@ -248,7 +248,8 @@ impl Engine {
     pub fn open(config: Config) -> Result<Self> {
         config.validate()?;
         fs::create_dir_all(&config.state_dir)?;
-        fs::set_permissions(&config.state_dir, fs::Permissions::from_mode(0o700))?;
+        let mode = if config.shared_token { 0o710 } else { 0o700 };
+        fs::set_permissions(&config.state_dir, fs::Permissions::from_mode(mode))?;
         let lock = OpenOptions::new()
             .read(true)
             .write(true)
@@ -477,7 +478,7 @@ pub fn read_token(config: &Config) -> Result<String> {
 
 pub fn read_token_path(path: &std::path::Path) -> Result<String> {
     let token = fs::read_to_string(path)
-        .context("Cannot read access token. Is the yonix service running for this user?")?;
+        .context("Cannot read access token. Check that the Yonix service is running and your user has access (yonix group on NixOS).")?;
     let token = token.trim();
     if token.len() != 64 || !token.bytes().all(|b| b.is_ascii_hexdigit()) {
         bail!("Invalid token file");
@@ -486,7 +487,12 @@ pub fn read_token_path(path: &std::path::Path) -> Result<String> {
 }
 
 pub fn ensure_token(config: &Config) -> Result<String> {
-    if config.token_path().exists() {
+    let path = config.token_path();
+    let mode = if config.shared_token { 0o640 } else { 0o600 };
+    if path.exists() {
+        if config.shared_token {
+            fs::set_permissions(&path, fs::Permissions::from_mode(mode))?;
+        }
         return read_token(config);
     }
     let mut random = [0u8; 32];
@@ -496,10 +502,13 @@ pub fn ensure_token(config: &Config) -> Result<String> {
         .write(true)
         .create_new(true)
         .mode(0o600)
-        .open(config.token_path())
+        .open(path)
     {
         Ok(mut file) => {
             file.write_all(token.as_bytes())?;
+            if config.shared_token {
+                file.set_permissions(fs::Permissions::from_mode(mode))?;
+            }
             Ok(token)
         }
         Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => read_token(config),

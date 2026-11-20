@@ -212,11 +212,10 @@ cat > "$work/configuration.nix" <<CONFIG
   time.timeZone = "$timezone";
   i18n.defaultLocale = "en_US.UTF-8";
 
-  users.users."$user" = { isNormalUser = true; extraGroups = [ "wheel" "networkmanager" ]; };
+  users.users."$user" = { isNormalUser = true; extraGroups = [ "wheel" "networkmanager" "yonix" ]; };
   environment.systemPackages = [ pkgs.nano ];
   programs.yonix = {
     enable = true;
-    user = "$user";
     configPath = "/etc/nixos";
     sourceMode = "path";
     allowSystemChanges = true;

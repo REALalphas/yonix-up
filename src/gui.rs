@@ -565,6 +565,7 @@ mod tests {
             listen_address: std::net::Ipv4Addr::LOCALHOST.into(),
             peers: Vec::new(),
             cache: None,
+            shared_token: false,
         };
         std::fs::create_dir(&config.config_path).unwrap();
         let engine = Engine::open(config.clone()).unwrap();
