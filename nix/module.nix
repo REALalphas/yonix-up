@@ -250,7 +250,8 @@ in
       programs.yonix.user is deprecated and will be removed in a future release.
       Yonix now runs as the shared yonix system user. Add ${cfg.user} to the yonix
       group with users.users.${cfg.user}.extraGroups = [ "yonix" ], then remove
-      programs.yonix.user.
+      programs.yonix.user. When upgrading from a release that ran as ${cfg.user},
+      restart yonix.service after activation to apply the new service credentials.
     '';
     assertions = [
       {
@@ -366,7 +367,9 @@ in
     security.sudo.enable = mkIf cfg.allowSystemChanges true;
     security.sudo.extraRules = lib.optionals cfg.allowSystemChanges [
       {
-        users = [ "yonix" ];
+        # Self-reexec preserves the old daemon's credentials. Keep the legacy
+        # operator authorized until systemd starts it as yonix.
+        users = lib.unique ([ "yonix" ] ++ lib.optional (cfg.user != null) cfg.user);
         commands =
           map
             (action: {

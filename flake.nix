@@ -124,7 +124,12 @@
           assert config.services.nix-serve.secretKeyFile == "/var/lib/yonix-cache/secret-key";
           assert builtins.elem "http://10.0.0.2:9848" config.nix.settings.extra-substituters;
           assert config.systemd.services.yonix.serviceConfig.User == "yonix";
+          assert config.systemd.services.yonix.serviceConfig.Group == "yonix";
           assert config.systemd.services.yonix.serviceConfig.NoNewPrivileges == false;
+          assert builtins.elem "operator" config.users.groups.yonix.members;
+          assert builtins.any (
+            rule: rule.users == [ "yonix" "operator" ] && builtins.length rule.commands == 3
+          ) config.security.sudo.extraRules;
           assert config.programs.yonix.cache.listenAddress == "0.0.0.0";
           pkgs.writeText "yonix-module-check" (
             builtins.toJSON {
