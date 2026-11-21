@@ -8,7 +8,12 @@
       <stop offset=".23" stop-color="#75b5f5"/>
       <stop offset="1" stop-color="#3584e4"/>
     </linearGradient>
-    <linearGradient id="yonix-crease" gradientUnits="userSpaceOnUse" x1="37" y1="20" x2="66" y2="46" xlink:href="#yonix-paper"/>
+    <linearGradient id="yonix-crease" gradientUnits="userSpaceOnUse" x1="36" y1="18" x2="48" y2="51">
+      <stop stop-color="#B6D9EA"/>
+      <stop offset=".28" stop-color="#A0CCE1"/>
+      <stop offset=".62" stop-color="#73A8C7"/>
+      <stop offset="1" stop-color="#5689AD"/>
+    </linearGradient>
     <linearGradient id="yonix-glint" gradientUnits="userSpaceOnUse" x1="78" y1="0" x2="105" y2="0">
       <stop stop-color="#e2f3ff" stop-opacity="0"/>
       <stop offset=".27" stop-color="#e2f3ff" stop-opacity=".32"/>
@@ -19,7 +24,7 @@
     <path id="yonix-long-fold" d="M31 84l37-64q4-8 13-8h22q6 0 3 6l-51 88q-4 7-11 5-4-1-7-6l-6-11q-3-5 0-10z"/>
   </defs>
   <g transform="translate(1 4) translate(64 64) scale(.97) translate(-64 -64)">
-    <use xlink:href="#yonix-short-fold" transform="translate(0 2)" fill="#171b20"/>
+    <use xlink:href="#yonix-short-fold" transform="translate(0 3)" fill="#52758a" fill-opacity=".45"/>
     <use xlink:href="#yonix-long-fold" transform="translate(0 2)" fill="#171b20"/>
     <use xlink:href="#yonix-short-fold" fill="url(#yonix-crease)"/>
     <use xlink:href="#yonix-long-fold" fill="url(#yonix-paper)"/>
