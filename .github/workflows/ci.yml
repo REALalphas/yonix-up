@@ -48,7 +48,7 @@ jobs:
     runs-on: [self-hosted, large-compute]
     timeout-minutes: 60
     env:
-      CARGO_BUILD_JOBS: '2'
+      CARGO_BUILD_JOBS: '8'
       CARGO_PROFILE_DEV_DEBUG: '0'
       CARGO_PROFILE_TEST_DEBUG: '0'
       CARGO_INCREMENTAL: '0'
@@ -60,8 +60,8 @@ jobs:
       - uses: cachix/install-nix-action@d698718aa798980d17dd749f03beae0b51183399 # v31
         with:
           extra_nix_config: |
-            max-jobs = 2
-            cores = 2
+            max-jobs = 8
+            cores = 8
             extra-substituters = https://yonix.cachix.org
             extra-trusted-public-keys = yonix.cachix.org-1:tuJfS1bMNuVctofrHgbmUcfYcqLfjieOmOI42ccjaqg=
       - name: Cache Cargo dependencies and build artifacts
@@ -113,8 +113,8 @@ jobs:
       - uses: cachix/install-nix-action@d698718aa798980d17dd749f03beae0b51183399 # v31
         with:
           extra_nix_config: |
-            max-jobs = 2
-            cores = 2
+            max-jobs = 8
+            cores = 8
             extra-substituters = https://yonix.cachix.org
             extra-trusted-public-keys = yonix.cachix.org-1:tuJfS1bMNuVctofrHgbmUcfYcqLfjieOmOI42ccjaqg=
       - name: Build and test
@@ -138,8 +138,8 @@ jobs:
       - uses: cachix/install-nix-action@d698718aa798980d17dd749f03beae0b51183399 # v31
         with:
           extra_nix_config: |
-            max-jobs = 2
-            cores = 2
+            max-jobs = 8
+            cores = 8
             extra-substituters = https://yonix.cachix.org
             extra-trusted-public-keys = yonix.cachix.org-1:tuJfS1bMNuVctofrHgbmUcfYcqLfjieOmOI42ccjaqg=
             system-features = nixos-test benchmark big-parallel kvm
