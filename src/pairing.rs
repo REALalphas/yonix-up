@@ -1,16 +1,4 @@
-//! Pairing links: `base64url(payload)#PAIRING_CODE`.
-//!
-//! The payload carries the initiator's reachable paths; the code after `#`
-//! is a one-time pairing code (never the login token). Everything before
-//! `#` decodes to JSON:
-//!
-//! ```json
-//! {"v":1,"host":"nas","paths":[{"url":"...","role":"direct"}]}
-//! ```
-//!
-//! A bare code (no `#`, no payload) is also accepted: the operator then
-//! types the initiator's address by hand (manual address entry).
-//! Self-contained base64url encode/decode, no extra crates.
+//! Short invitations carry a packed socket address and a six-digit PIN. Legacy links carry a JSON path list.
 
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
@@ -118,7 +106,7 @@ pub fn decode_b64url(text: &str) -> Result<Vec<u8>> {
 /// Build `base64url(payload)#code`. The payload must already be validated
 /// (see [`validate_payload`]) so generated links never carry bad paths.
 pub fn encode_link(payload: &PairPayload, code: &str) -> Result<String> {
-    validate_code(code)?;
+    let code = normalize_code(code)?;
     validate_payload(payload)?;
     Ok(format!(
         "{}#{}",
@@ -127,8 +115,45 @@ pub fn encode_link(payload: &PairPayload, code: &str) -> Result<String> {
     ))
 }
 
+/// A direct invitation contains only the IP octets and network-order TCP port.
+/// The leading tilde distinguishes it from legacy base64url JSON.
+pub fn compact_link(address: std::net::SocketAddr, code: &str) -> Result<String> {
+    validate_candidate(&format!("http://{address}"), PathRole::Direct)?;
+    let mut bytes = match address.ip() {
+        IpAddr::V4(ip) => ip.octets().to_vec(),
+        IpAddr::V6(ip) => ip.octets().to_vec(),
+    };
+    bytes.extend(address.port().to_be_bytes());
+    Ok(format!(
+        "~{}#{}",
+        encode_b64url(&bytes),
+        normalize_code(code)?
+    ))
+}
+
+fn compact_payload(head: &str) -> Result<PairPayload> {
+    let bytes = decode_b64url(head)?;
+    let (ip, port) = bytes
+        .split_last_chunk::<2>()
+        .context("Missing pairing port")?;
+    let address: IpAddr = match ip.len() {
+        4 => std::net::Ipv4Addr::from(<[u8; 4]>::try_from(ip)?).into(),
+        16 => std::net::Ipv6Addr::from(<[u8; 16]>::try_from(ip)?).into(),
+        _ => bail!("Invalid compact pairing address"),
+    };
+    let socket = std::net::SocketAddr::new(address, u16::from_be_bytes(*port));
+    Ok(PairPayload {
+        v: 1,
+        host: String::new(),
+        paths: vec![PathCandidate {
+            url: format!("http://{socket}"),
+            role: PathRole::Direct,
+        }],
+    })
+}
+
 /// Parse either a full link or a bare code. A bare code has no payload:
-/// the caller must ask the operator for the initiator's address by hand.
+/// the daemon can discover the initiator on the LAN.
 pub fn parse_link(text: &str) -> Result<PairLink> {
     let text = text.trim();
     if text.is_empty() {
@@ -136,25 +161,27 @@ pub fn parse_link(text: &str) -> Result<PairLink> {
     }
     match text.split_once('#') {
         Some((head, code)) => {
-            let bytes = decode_b64url(head.trim()).context("Invalid pairing link")?;
-            let payload: PairPayload =
-                serde_json::from_slice(&bytes).context("Invalid pairing link payload")?;
-            validate_code(code.trim())?;
+            let payload = if let Some(packed) = head.trim().strip_prefix('~') {
+                compact_payload(packed)?
+            } else {
+                let head = head.trim();
+                let bytes = decode_b64url(head.strip_prefix('!').unwrap_or(head))
+                    .context("Invalid pairing link")?;
+                serde_json::from_slice(&bytes).context("Invalid pairing link payload")?
+            };
+            let code = normalize_code(code)?;
             validate_payload(&payload)?;
-            Ok(PairLink {
-                payload,
-                code: code.trim().into(),
-            })
+            Ok(PairLink { payload, code })
         }
         None => {
-            validate_code(text)?;
+            let code = normalize_code(text)?;
             Ok(PairLink {
                 payload: PairPayload {
                     v: 1,
                     host: String::new(),
                     paths: Vec::new(),
                 },
-                code: text.into(),
+                code,
             })
         }
     }
@@ -162,10 +189,22 @@ pub fn parse_link(text: &str) -> Result<PairLink> {
 
 /// A short pairing code: exactly 6 ASCII digits, easy to read aloud or type.
 pub fn validate_code(code: &str) -> Result<()> {
-    if code.len() != 6 || !code.bytes().all(|b| b.is_ascii_digit()) {
+    normalize_code(code).map(|_| ())
+}
+
+/// Normalize human-entered pairing codes. Separators and whitespace are
+/// ignored so codes copied as `123-456`, `123 456`, or split across fields
+/// remain interoperable while the wire format stays six ASCII digits.
+pub fn normalize_code(code: &str) -> Result<String> {
+    let normalized: String = code
+        .bytes()
+        .filter(|byte| !byte.is_ascii_whitespace() && *byte != b'-')
+        .map(char::from)
+        .collect();
+    if normalized.len() != 6 || !normalized.bytes().all(|b| b.is_ascii_digit()) {
         bail!("Pairing code must be 6 digits");
     }
-    Ok(())
+    Ok(normalized)
 }
 
 pub fn validate_payload(payload: &PairPayload) -> Result<()> {

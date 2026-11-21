@@ -146,6 +146,10 @@ fn is_false(value: &bool) -> bool {
 struct PendingPairing {
     code: String,
     created: u64,
+    #[serde(default)]
+    invite_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    committing_pair: Option<String>,
 }
 
 pub struct Connections {
@@ -195,7 +199,14 @@ impl Connections {
             // drop expired entries so only live codes survive.
             stored
                 .into_iter()
-                .filter(|pairing| !pairing_code_expired(pairing.created))
+                .filter_map(|mut pairing| {
+                    let committed = pairing.committing_pair.take().is_some_and(|id| {
+                        saved
+                            .iter()
+                            .any(|peer| peer.pair_id.as_deref() == Some(&id))
+                    });
+                    (!committed && !pairing_code_expired(pairing.created)).then_some(pairing)
+                })
                 .collect()
         } else {
             Vec::new()
@@ -283,92 +294,123 @@ impl Connections {
 
     /// Pairing codes live 10 minutes, burn on first successful redeem and
     /// never return the login token.
-    pub fn mint_pairing(&self) -> Result<String> {
+    pub fn mint_pairing(&self) -> Result<(String, u64)> {
         let mut pending = self.pending.lock().unwrap();
-        let live: Vec<PendingPairing> = pending
+        let now = now_secs();
+        if let Some(current) = pending
             .iter()
-            .filter(|pairing| !pairing_code_expired(pairing.created))
+            .rev()
+            .find(|entry| entry.invite_id.is_some() && now.saturating_sub(entry.created) < 600)
+        {
+            return Ok((
+                current.code.clone(),
+                600 - now.saturating_sub(current.created),
+            ));
+        }
+        let mut code = random_code()?;
+        while pending.iter().any(|old| old.code == code) {
+            code = random_code()?;
+        }
+        let mut next: Vec<_> = pending
+            .iter()
+            .filter(|entry| entry.invite_id.is_none() && !pairing_code_expired(entry.created))
             .cloned()
             .collect();
-        *pending = live;
-        if pending.len() >= 8 {
-            bail!("Too many outstanding pairing codes; redeem or wait for expiry");
-        }
-        let code = random_code()?;
-        pending.push(PendingPairing {
+        next.push(PendingPairing {
             code: code.clone(),
-            created: now_secs(),
+            created: now,
+            invite_id: Some(random_id()?),
+            committing_pair: None,
         });
-        self.save_pending(&pending)?;
-        Ok(code)
+        self.save_pending(&next)?;
+        *pending = next;
+        Ok((code, 600))
     }
 
-    /// Claim a code minted by this daemon. Returns `true` on first use and
-    /// burns the code; expired or unknown codes return `false`.
-    pub fn redeem_local(&self, code: &str) -> Result<bool> {
-        let mut pending = self.pending.lock().unwrap();
-        let mut kept = Vec::with_capacity(pending.len());
-        let mut redeemed = false;
-        for pairing in pending.iter() {
-            if pairing_code_expired(pairing.created) {
-                continue;
-            }
-            if crate::server::token_matches(&pairing.code, code) {
-                // Burn on first successful redeem: never reuse a code.
-                redeemed = true;
-                continue;
-            }
-            kept.push(pairing.clone());
-        }
-        if redeemed {
-            *pending = kept;
-            self.save_pending(&pending)?;
-        } else if kept.len() != pending.len() {
-            // Prune expired codes even on a miss so they cannot accumulate.
-            *pending = kept;
-            self.save_pending(&pending)?;
-        }
-        Ok(redeemed)
+    pub(crate) fn current_invite(&self) -> Option<(String, String)> {
+        self.pending
+            .lock()
+            .unwrap()
+            .iter()
+            .rev()
+            .find(|entry| entry.invite_id.is_some() && !pairing_code_expired(entry.created))
+            .and_then(|entry| Some((entry.code.clone(), entry.invite_id.clone()?)))
+    }
+    pub(crate) fn has_invite(&self) -> bool {
+        self.current_invite().is_some()
     }
 
-    /// Save the acceptor side of a completed pairing. Blocks only exact
-    /// re-pairing while an unlink is pending, not the whole peer address.
-    pub fn add_paired(
+    /// Journal the intended pair ID before saving credentials. On restart the peer
+    /// file determines whether this claim committed or the invitation is reusable.
+    pub(crate) fn redeem_paired(
         &self,
-        label: String,
-        url: String,
-        token: String,
-        pair_id: String,
-    ) -> Result<Connection> {
-        self.validate(&ConnectionInput {
-            label: label.clone(),
-            url: url.clone(),
-            token: token.clone(),
-            pair_id: Some(pair_id.clone()),
-        })?;
+        code: &str,
+        invite_id: Option<&str>,
+        input: ConnectionInput,
+    ) -> Result<bool> {
+        let mut pending = self.pending.lock().unwrap();
+        let Some(index) = pending.iter().position(|entry| {
+            !pairing_code_expired(entry.created)
+                && entry.invite_id.as_deref() == invite_id
+                && crate::server::token_matches(&entry.code, code)
+        }) else {
+            return Ok(false);
+        };
+        self.validate(&input)?;
         let mut saved = self.saved.lock().unwrap();
-        if saved.len() + self.declared.len() >= 32 {
-            bail!("At most 32 peers are supported");
-        }
+        let existing = saved
+            .iter()
+            .position(|p| p.url.trim_end_matches('/') == input.url);
+        let id = if let Some(i) = existing {
+            let peer = &saved[i];
+            // A retry after losing the final reply may repair the mirrored
+            // entry, but only the same credential can reclaim this URL.
+            if peer.pair_id.is_none()
+                || peer.unlink_pending
+                || !crate::server::token_matches(&peer.token, &input.token)
+            {
+                bail!("This host is already connected");
+            }
+            peer.id.clone()
+        } else {
+            if self
+                .declared
+                .iter()
+                .any(|p| p.url.trim_end_matches('/') == input.url)
+            {
+                bail!("This connection is managed by Nix");
+            }
+            if saved.len() + self.declared.len() >= 32 {
+                bail!("At most 32 peers are supported");
+            }
+            format!("pair-{}", random_id()?)
+        };
+        let mut journal = pending.clone();
+        journal[index].committing_pair = input.pair_id.clone();
         let entry = SavedConnection {
-            id: format!("pair-{}", random_id()?),
-            label,
-            url,
-            token,
-            pair_id: Some(pair_id),
+            id,
+            label: input.label,
+            url: input.url,
+            token: input.token,
+            pair_id: input.pair_id,
             unlink_pending: false,
         };
-        let view = Connection {
-            id: entry.id.clone(),
-            label: entry.label.clone(),
-            url: entry.url.clone(),
-            managed_by_nix: false,
-        };
         let mut next = saved.clone();
-        next.push(entry);
+        if let Some(i) = existing {
+            next[i] = entry;
+        } else {
+            next.push(entry);
+        }
+        self.save_pending(&journal)?;
         self.save(&next)?;
         *saved = next;
-        Ok(view)
+        pending.remove(index);
+        // The persisted journal also represents this committed state. A later
+        // mint, removal or restart compacts it if immediate cleanup fails.
+        if let Err(e) = self.save_pending(&pending) {
+            eprintln!("Yonix pairing journal cleanup deferred: {e}");
+        }
+        Ok(true)
     }
 
     /// Read this daemon's own login token for the initiator side of a redeem.
@@ -439,6 +481,10 @@ impl Connections {
         if self.declared.iter().any(|p| p.id == id) {
             bail!("This connection is managed by Nix; remove it from programs.yonix.peers");
         }
+        // Persist spent invitations before deleting a peer that could still
+        // serve as a journal commit record on disk.
+        let pending = self.pending.lock().unwrap();
+        self.save_pending(&pending)?;
         let mut saved = self.saved.lock().unwrap();
         let next: Vec<_> = saved.iter().filter(|p| p.id != id).cloned().collect();
         if next.len() == saved.len() {
@@ -489,7 +535,7 @@ fn now_secs() -> u64 {
 /// Expiry is checked on load, on mint and on redeem; spent codes are dropped
 /// immediately so a captured code cannot be replayed later.
 fn pairing_code_expired(created: u64) -> bool {
-    now_secs().saturating_sub(created) > 600
+    now_secs().saturating_sub(created) >= 600
 }
 
 fn random_code() -> Result<String> {

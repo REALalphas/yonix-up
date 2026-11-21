@@ -104,6 +104,7 @@
     "operationId": "ID de l’opération",
     "tokenStorageError": "Le navigateur n’a pas pu enregistrer le jeton. La connexion restera active jusqu’à la fermeture de la page.",
     "copyPairingLink": "Copier le lien",
+    "copyPairingCode": "Copier le code",
     "pairingLink": "Lien d'appairage",
     "pairingLinkPlaceholder": "Collez le lien d'appairage ou un code seul",
     "pairingOrigin": "Adresse de l'initiateur (pour un code seul)",
@@ -122,7 +123,7 @@
     "statusRollingBack": "Restauration",
     "statusCleaning": "Nettoyage",
     "addConnection": "Add connection",
-    "addConnectionHelp": "Share a link to pair with another Yonix instance",
+    "addConnectionHelp": "Partagez un code à six chiffres pour associer une autre instance Yonix",
     "addOtherInstance": "Add another instance",
     "back": "Back",
     "advanced": "Advanced"

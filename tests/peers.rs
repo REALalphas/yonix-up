@@ -218,6 +218,16 @@ fn pairing_links_exchange_tokens_burn_codes_and_reject_replay() {
     let temp = tempfile::tempdir().unwrap();
     let initiator = config(temp.path(), "nas");
     let joiner = config(temp.path(), "web");
+    // An unspent invitation from before the encrypted handshake remains usable
+    // by the old protocol until its original expiry.
+    fs::create_dir_all(&initiator.state_dir).unwrap();
+    let old = initiator.state_dir.join("pairings.json");
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    fs::write(&old, json!([{"code":"012345","created":now}]).to_string()).unwrap();
+    fs::set_permissions(&old, fs::Permissions::from_mode(0o600)).unwrap();
     let _initiator_process = spawn(&initiator);
     let _joiner_process = spawn(&joiner);
     let initiator_token = engine::read_token(&initiator).unwrap();
@@ -277,8 +287,13 @@ fn pairing_links_exchange_tokens_burn_codes_and_reject_replay() {
             .send()
             .unwrap()
     };
+    assert_eq!(
+        redeem(json!({"code":code, "host":"web", "url":joiner.base_url(), "token":joiner_token}))
+            .status(),
+        401
+    );
     let joiner_body = json!({
-        "code": code,
+        "code": "012345",
         "host": "web",
         "token": joiner_token,
         "url": joiner.base_url(),
@@ -287,7 +302,7 @@ fn pairing_links_exchange_tokens_burn_codes_and_reject_replay() {
     assert_eq!(reply["host"], "nas");
     assert_eq!(reply["token"], initiator_token);
     assert!(reply["pair_id"].as_str().unwrap().starts_with("pair-"));
-    assert!(!reply.to_string().contains(code));
+    assert!(reply.get("code").is_none());
     // The initiator stored the joiner's entry with the shared pair id.
     let connections: Value = http
         .get(format!("{}/api/connections", initiator.base_url()))
@@ -437,4 +452,113 @@ fn browser_connections_are_verified_private_persistent_and_removable() {
             .contains(&remote_token)
     );
     drop(gateway_process);
+}
+
+#[test]
+fn six_digits_or_compact_invitation_pair_both_daemons() {
+    for use_code in [true, false] {
+        let root = tempfile::tempdir().unwrap();
+        let share = config(root.path(), "sender");
+        let _sender = spawn(&share);
+        let join = config(root.path(), "receiver");
+        let _receiver = spawn(&join);
+        let http = reqwest::blocking::Client::builder()
+            .no_proxy()
+            .timeout(Duration::from_secs(10))
+            .build()
+            .unwrap();
+        let post = |c: &Config, path: &str, body: Value| {
+            http.post(format!("{}/api/{path}", c.base_url()))
+                .bearer_auth(engine::read_token(c).unwrap())
+                .json(&body)
+                .send()
+                .unwrap()
+        };
+        let mint = || post(&share, "pairings", json!({})).json::<Value>().unwrap();
+        let invite = mint();
+        assert_eq!(invite["code"], mint()["code"]);
+        let link = invite["link"].as_str().unwrap();
+        assert_eq!(link.len(), 16);
+        let code = invite["code"].as_str().unwrap();
+        // A wrong PIN cannot create a peer or consume the original invitation.
+        let wrong = format!(
+            "{}{}",
+            if code.starts_with('0') { "1" } else { "0" },
+            &code[1..]
+        );
+        let wrong_link = format!("{}#{wrong}", link.split_once('#').unwrap().0);
+        assert!(
+            !post(&join, "pairings/accept", json!({"link":wrong_link}))
+                .status()
+                .is_success()
+        );
+        let entry = post(
+            &join,
+            "pairings/accept",
+            json!({"link":if use_code { code } else {link}}),
+        );
+        let status = entry.status();
+        let entry: Value = entry.json().unwrap();
+        assert!(status.is_success(), "{entry}");
+        for (from, to) in [(&join, &share), (&share, &join)] {
+            let peers: Value = http
+                .get(format!("{}/api/connections", from.base_url()))
+                .bearer_auth(engine::read_token(from).unwrap())
+                .send()
+                .unwrap()
+                .json()
+                .unwrap();
+            let peers = peers.as_array().unwrap();
+            assert_eq!(peers.len(), 1);
+            assert_eq!(peers[0]["url"], to.base_url());
+            let checked = post(
+                from,
+                &format!("connections/{}/check", peers[0]["id"].as_str().unwrap()),
+                json!({}),
+            );
+            assert_eq!(checked.json::<Value>().unwrap()["host"], to.host);
+        }
+        assert!(
+            !post(&join, "pairings/accept", json!({"link":link}))
+                .status()
+                .is_success()
+        );
+    }
+}
+
+#[test]
+fn interrupted_pairing_recovers_from_the_persisted_peer_record() {
+    let root = tempfile::tempdir().unwrap();
+    let cfg = config(root.path(), "sender");
+    fs::create_dir_all(&cfg.state_dir).unwrap();
+    let journal = cfg.state_dir.join("pairings.json");
+    let pair = format!("pair-{}", "1".repeat(32));
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let claim =
+        json!([{"code":"001234","created":now,"invite_id":"fixture","committing_pair":pair}]);
+    let write = |path: &std::path::Path, body: &Value| {
+        fs::write(path, body.to_string()).unwrap();
+        fs::set_permissions(path, fs::Permissions::from_mode(0o600)).unwrap();
+    };
+    for committed in [false, true] {
+        write(&journal, &claim);
+        if committed {
+            write(
+                &cfg.state_dir.join("connections.json"),
+                &json!([{
+                    "id":"pair-fixture","pair_id":pair,"label":"other","url":"http://127.0.0.2:9847",
+                    "token":"a".repeat(64)
+                }]),
+            );
+        }
+        let store = yonix::peers::Connections::open(&cfg).unwrap();
+        let pending: Value = serde_json::from_slice(&fs::read(&journal).unwrap()).unwrap();
+        assert_eq!(pending.as_array().unwrap().len(), usize::from(!committed));
+        if !committed {
+            assert_eq!(store.mint_pairing().unwrap().0, "001234");
+        }
+    }
 }

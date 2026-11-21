@@ -455,6 +455,7 @@ fn pairing_bare_code_has_no_paths() {
     let parsed = parse_link(&code).unwrap();
     assert_eq!(parsed.code, code);
     assert!(parsed.payload.paths.is_empty());
+    assert_eq!(parse_link("731-045").unwrap().code, code);
 }
 
 #[test]

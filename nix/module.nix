@@ -126,7 +126,7 @@ in
       default = config.networking.hostName;
       description = "nixosConfigurations attribute to manage.";
     };
-    openFirewall = mkEnableOption "opening the configured Yonix TCP port";
+    openFirewall = mkEnableOption "opening the configured Yonix TCP port and LAN discovery on UDP 9847";
     listenAddress = mkOption {
       type = types.str;
       default = "127.0.0.1";
@@ -321,6 +321,7 @@ in
     # the remote build can start.
     nix.settings.builders-use-substitutes = lib.mkDefault true;
     environment.systemPackages = [ cfg.package ];
+    networking.firewall.allowedUDPPorts = lib.optionals cfg.openFirewall [ 9847 ];
     networking.firewall.allowedTCPPorts = lib.optionals cfg.openFirewall [ cfg.port ];
     environment.etc."yonix/config.json".source = json.generate "yonix-config.json" settings;
     nix.settings.experimental-features = [

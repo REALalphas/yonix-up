@@ -104,6 +104,7 @@
     "operationId": "操作 ID",
     "tokenStorageError": "ブラウザーでトークンを保存できませんでした。ページを閉じるまで接続は維持されます。",
     "copyPairingLink": "リンクをコピー",
+    "copyPairingCode": "コードをコピー",
     "pairingLink": "ペアリングリンク",
     "pairingLinkPlaceholder": "ペアリングリンクまたはベアコードを貼り付け",
     "pairingOrigin": "開始者のアドレス（ベアコード用）",
@@ -122,7 +123,7 @@
     "statusRollingBack": "ロールバック中",
     "statusCleaning": "クリーンアップ中",
     "addConnection": "Add connection",
-    "addConnectionHelp": "Share a link to pair with another Yonix instance",
+    "addConnectionHelp": "6桁のコードを共有して別の Yonix インスタンスとペアリングします",
     "addOtherInstance": "Add another instance",
     "back": "Back",
     "advanced": "Advanced"

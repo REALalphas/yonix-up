@@ -104,6 +104,7 @@
     "operationId": "İşlem kimliği",
     "tokenStorageError": "Tarayıcı belirteci kaydedemedi. Sayfa kapatılana kadar bağlantı açık kalacak.",
     "copyPairingLink": "Bağlantıyı kopyala",
+    "copyPairingCode": "Kodu kopyala",
     "pairingLink": "Eşleştirme bağlantısı",
     "pairingLinkPlaceholder": "Eşleştirme bağlantısını veya yalın kodu yapıştırın",
     "pairingOrigin": "Başlatıcı adresi (yalın kod için)",
@@ -122,7 +123,7 @@
     "statusRollingBack": "Geri alınıyor",
     "statusCleaning": "Temizleniyor",
     "addConnection": "Add connection",
-    "addConnectionHelp": "Share a link to pair with another Yonix instance",
+    "addConnectionHelp": "Başka bir Yonix örneğiyle eşleştirmek için altı haneli kodu paylaşın",
     "addOtherInstance": "Add another instance",
     "back": "Back",
     "advanced": "Advanced"

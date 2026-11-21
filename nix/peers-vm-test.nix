@@ -28,6 +28,8 @@ pkgs.testers.runNixOSTest {
     nix.settings.sandbox = false;
   };
   nodes.nas = {
+    networking.firewall.allowedTCPPorts = [ 9851 ];
+    environment.systemPackages = [ pkgs.jq ];
     programs.yonix = {
       listenAddress = "192.168.1.1";
       peers.web = {
@@ -65,6 +67,17 @@ pkgs.testers.runNixOSTest {
     status = json.loads(nas.succeed("curl -fsS " + auth + " http://192.168.1.1:9847/api/hosts/web/status"))
     assert status["host"] == "web", status
     assert "token_file" not in nas.succeed("curl -fsS " + auth + " http://192.168.1.1:9847/api/hosts")
+    # Exercise code-only pairing through both NixOS firewalls. Use an
+    # independent daemon on nas so its declarative web peer stays separate.
+    nas.succeed("jq '.port = 9851 | .peers = [] | .host = \"pair-client\" | .state_dir = \"/run/yonix-pair-test\"' /etc/yonix/config.json >/tmp/pair-client.json")
+    nas.succeed("systemd-run --unit=yonix-pair-test /run/current-system/sw/bin/yonix --config /tmp/pair-client.json serve")
+    nas.wait_for_open_port(9851, addr="192.168.1.1")
+    code = json.loads(web.succeed("yonix pair --json"))["code"]
+    nas.succeed("yonix --config /tmp/pair-client.json pair-accept " + shlex.quote(code))
+    paired = json.loads(web.succeed("curl -fsS " + auth + " http://192.168.1.2:9847/api/connections"))
+    client_id = next(entry["id"] for entry in paired if entry["url"] == "http://192.168.1.1:9851")
+    client = json.loads(web.succeed("curl -fsS " + auth + " http://192.168.1.2:9847/api/hosts/" + client_id + "/status"))
+    assert client["host"] == "pair-client"
     nas.succeed("touch /run/allow-local-build")
     path = nas.succeed("nix-build /etc/cache-fixture.nix --no-out-link").strip()
     pub = nas.succeed("cat /var/lib/yonix-cache/public-key").strip()

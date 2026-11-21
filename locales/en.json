@@ -104,6 +104,7 @@
     "operationId": "Operation ID",
     "tokenStorageError": "The browser could not save the token. This session will remain connected until the page closes.",
     "copyPairingLink": "Copy link",
+    "copyPairingCode": "Copy code",
     "pairingLink": "Pairing link",
     "pairingLinkPlaceholder": "Paste the pairing link or a bare code",
     "pairingOrigin": "Initiator address (for a bare code)",
@@ -122,7 +123,7 @@
     "statusRollingBack": "Rolling back",
     "statusCleaning": "Cleaning",
     "addConnection": "Add connection",
-    "addConnectionHelp": "Share a link to pair with another Yonix instance",
+    "addConnectionHelp": "Share a six-digit code to pair with another Yonix instance",
     "addOtherInstance": "Add another instance",
     "back": "Back",
     "advanced": "Advanced"
