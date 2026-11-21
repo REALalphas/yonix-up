@@ -92,7 +92,9 @@ fn peer_configuration_and_credentials_are_restricted() {
 }
 #[test]
 fn gateway_keeps_credentials_local_and_routes_single_hop() {
-    let temp = tempfile::tempdir().unwrap();
+    // The fake nix must be executable even when TMPDIR is mounted noexec.
+    let test_binary = std::env::current_exe().unwrap();
+    let temp = tempfile::tempdir_in(test_binary.parent().unwrap()).unwrap();
     let bin = temp.path().join("bin");
     fs::create_dir(&bin).unwrap();
     let shell = std::env::split_paths(&std::env::var_os("PATH").unwrap())
@@ -180,21 +182,21 @@ fn gateway_keeps_credentials_local_and_routes_single_hop() {
     let job: Value = post(json!({"action":"check"})).json().unwrap();
     let id = job["id"].as_str().unwrap();
     let deadline = Instant::now() + Duration::from_secs(5);
-    loop {
+    let job = loop {
         let job: Value = get(&format!("hosts/web/jobs/{id}")).json().unwrap();
         if job["status"] != "running" {
-            assert_eq!(job["status"], "succeeded");
-            break;
+            break job;
         }
-        assert!(Instant::now() < deadline);
+        assert!(Instant::now() < deadline, "Remote check timed out: {job}");
         thread::sleep(Duration::from_millis(20));
-    }
-    assert!(
-        get(&format!("hosts/web/jobs/{id}/log"))
-            .text()
-            .unwrap()
-            .contains("remote-fixture-output")
+    };
+    let log = get(&format!("hosts/web/jobs/{id}/log")).text().unwrap();
+    assert_eq!(
+        job["status"], "succeeded",
+        "Remote check failed: {}\n{log}",
+        job["error"]
     );
+    assert!(log.contains("remote-fixture-output"), "{log}");
     assert_eq!(get("hosts/local/jobs").json::<Value>().unwrap(), json!([]));
     // Rotated credentials are read per request; neither a failure nor a disconnect selects the local host.
     fs::write(remote.token_path(), "b".repeat(64)).unwrap();

@@ -17,6 +17,13 @@ impl Drop for Process {
         let _ = self.0.wait();
     }
 }
+
+fn executable_tempdir() -> tempfile::TempDir {
+    // The fake Nix commands must run even when TMPDIR is mounted noexec.
+    let test_binary = std::env::current_exe().unwrap();
+    tempfile::tempdir_in(test_binary.parent().unwrap()).unwrap()
+}
+
 fn await_job(client: &Client, id: &str) -> yonix::engine::Job {
     let deadline = Instant::now() + Duration::from_secs(15);
     loop {
@@ -39,7 +46,7 @@ fn authenticated_workflow_on_all_interfaces() {
 }
 
 fn authenticated_workflow(listen_address: std::net::IpAddr) {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = executable_tempdir();
     let root = temp.path();
     let repo = root.join("repo with spaces");
     let bin = root.join("bin");
@@ -310,7 +317,7 @@ if [ -f fail ]; then exit 7; fi
 
 #[test]
 fn legacy_workflow_uses_nixos_rebuild() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = executable_tempdir();
     let root = temp.path();
     let repo = root.join("repo with spaces");
     let bin = root.join("bin");
