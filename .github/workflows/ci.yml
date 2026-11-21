@@ -124,7 +124,7 @@ jobs:
 
   nixos:
     name: NixOS VM (${{ matrix.check }})
-    runs-on: [self-hosted, large-compute]
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
     strategy:
       fail-fast: false
