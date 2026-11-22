@@ -1,1 +1,33 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128"><rect x="8" y="8" width="112" height="112" rx="28" fill="#27634a"/><path d="M36 35h15l13 24 13-24h15L71 74v20H57V74z" fill="#eaf2eb"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="128" height="128" viewBox="0 0 128 128">
+  <title>Yonix</title>
+  <desc>A folded blue ribbon in the shape of a single mirrored arm of the Nix snowflake.</desc>
+  <metadata>Nix Snowflake by Simon Frankau and Tim Cuthbertson, https://github.com/NixOS/nixos-artwork/tree/master/logo, CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/). One arm isolated, reflected, rounded and redrawn as a ribbon for Yonix.</metadata>
+  <defs>
+    <linearGradient id="yonix-paper" x1="0" y1="0" x2=".28" y2="1">
+      <stop stop-color="#99c1f1"/>
+      <stop offset=".23" stop-color="#75b5f5"/>
+      <stop offset="1" stop-color="#3584e4"/>
+    </linearGradient>
+    <linearGradient id="yonix-crease" gradientUnits="userSpaceOnUse" x1="36" y1="18" x2="48" y2="51">
+      <stop stop-color="#B6D9EA"/>
+      <stop offset=".28" stop-color="#A0CCE1"/>
+      <stop offset=".62" stop-color="#73A8C7"/>
+      <stop offset="1" stop-color="#5689AD"/>
+    </linearGradient>
+    <linearGradient id="yonix-glint" gradientUnits="userSpaceOnUse" x1="78" y1="0" x2="105" y2="0">
+      <stop stop-color="#e2f3ff" stop-opacity="0"/>
+      <stop offset=".27" stop-color="#e2f3ff" stop-opacity=".32"/>
+      <stop offset=".74" stop-color="#e2f3ff" stop-opacity=".2"/>
+      <stop offset="1" stop-color="#e2f3ff" stop-opacity="0"/>
+    </linearGradient>
+    <path id="yonix-short-fold" d="M24 29q-2-3 0-6l5-8q2-3 6-3h13q4 0 6 4l16 28-17 25z"/>
+    <path id="yonix-long-fold" d="M31 84l37-64q4-8 13-8h22q6 0 3 6l-51 88q-4 7-11 5-4-1-7-6l-6-11q-3-5 0-10z"/>
+  </defs>
+  <g transform="translate(1 4) translate(64 64) scale(.97) translate(-64 -64)">
+    <use xlink:href="#yonix-short-fold" transform="translate(0 3)" fill="#52758a" fill-opacity=".45"/>
+    <use xlink:href="#yonix-long-fold" transform="translate(0 2)" fill="#171b20"/>
+    <use xlink:href="#yonix-short-fold" fill="url(#yonix-crease)"/>
+    <use xlink:href="#yonix-long-fold" fill="url(#yonix-paper)"/>
+    <path d="M80 12.4h22" fill="none" stroke="url(#yonix-glint)" stroke-width="1.2" stroke-linecap="round"/>
+  </g>
+</svg>
