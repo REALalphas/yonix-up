@@ -188,9 +188,11 @@ impl Config {
 
 pub fn validate_base_url(url: &str) -> Result<()> {
     let parsed = reqwest::Url::parse(url)?;
-    let host: IpAddr = parsed
-        .host_str()
-        .context("Missing host")?
+    let host_name = parsed.host_str().context("Missing host")?;
+    let host: IpAddr = host_name
+        .strip_prefix('[')
+        .and_then(|value| value.strip_suffix(']'))
+        .unwrap_or(host_name)
         .parse()
         .context("Use a numeric loopback address and an SSH tunnel")?;
     if parsed.scheme() != "http"

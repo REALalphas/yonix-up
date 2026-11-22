@@ -332,6 +332,46 @@ fn pairing_links_exchange_tokens_burn_codes_and_reject_replay() {
 }
 
 #[test]
+fn failed_connection_save_can_be_retried_without_losing_the_peer() {
+    use yonix::peers::{ConnectionInput, Connections};
+
+    let temp = tempfile::tempdir().unwrap();
+    let config = Config {
+        state_dir: temp.path().to_owned(),
+        ..Config::default()
+    };
+    let store = Connections::open(&config).unwrap();
+    let input = || ConnectionInput {
+        label: "Backup".into(),
+        url: "http://192.168.1.8:9847".into(),
+        token: "a".repeat(64),
+        pair_id: None,
+    };
+
+    // A directory at the destination makes the atomic rename fail even as root.
+    let registry = config.state_dir.join("connections.json");
+    fs::create_dir(&registry).unwrap();
+    assert!(store.add(input()).is_err());
+    assert!(store.list().is_empty());
+    fs::remove_dir(&registry).unwrap();
+    let peer = store.add(input()).unwrap();
+
+    let backup = config.state_dir.join("backup.json");
+    fs::rename(&registry, &backup).unwrap();
+    fs::create_dir(&registry).unwrap();
+    assert!(store.remove(&peer.id).is_err());
+    assert_eq!(
+        store.target(&peer.id).unwrap(),
+        Some((input().url, input().token))
+    );
+    fs::remove_dir(&registry).unwrap();
+    fs::rename(backup, registry).unwrap();
+    store.remove(&peer.id).unwrap();
+    drop(store);
+    assert!(Connections::open(&config).unwrap().list().is_empty());
+}
+
+#[test]
 fn browser_connections_are_verified_private_persistent_and_removable() {
     let temp = tempfile::tempdir().unwrap();
     let remote = config(temp.path(), "web");
