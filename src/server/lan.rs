@@ -197,11 +197,10 @@ fn http_client(listen: std::net::IpAddr) -> Result<reqwest::Client> {
 
 // Bound unauthenticated replies before decoding or deriving keys.
 async fn exchange<T: serde::de::DeserializeOwned>(
-    http: &reqwest::Client,
-    url: String,
+    request: reqwest::RequestBuilder,
     body: &impl Serialize,
 ) -> Result<T> {
-    let mut response = http.post(url).json(body).send().await?.error_for_status()?;
+    let mut response = request.json(body).send().await?.error_for_status()?;
     let mut bytes = Vec::new();
     while let Some(chunk) = response.chunk().await? {
         ensure!(
@@ -220,8 +219,7 @@ async fn identify(
 ) -> Result<(String, SocketAddr, String, Channel)> {
     let (join, message) = pairing_crypto::start_join(&code)?;
     let answer: Challenge = exchange(
-        &http,
-        format!("http://{peer}/api/pairings/hello"),
+        http.post(format!("http://{peer}/api/pairings/hello")),
         &Hello { message },
     )
     .await?;
@@ -290,8 +288,10 @@ pub(super) async fn accept_candidates(
         };
         let sealed = channel.seal_request(&serde_json::to_vec(&credentials)?)?;
         let wire: String = exchange(
-            &http,
-            format!("{peer_url}/api/pairings/finish"),
+            // The authenticated host flushes its pairing journal and peer
+            // credentials to disk before replying.
+            http.post(format!("{peer_url}/api/pairings/finish"))
+                .timeout(Duration::from_secs(6)),
             &Finish { session, sealed },
         )
         .await?;

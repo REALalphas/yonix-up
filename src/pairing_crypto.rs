@@ -179,4 +179,32 @@ mod tests {
         let (_server, second, proof) = start_share("654321", &first, "invite").unwrap();
         assert!(join.finish(&second, &proof, "invite").is_err());
     }
+
+    #[test]
+    fn channel_messages_are_single_use_and_tampering_is_rejected() {
+        let (join, first) = start_join("123456").unwrap();
+        let (mut server, second, proof) = start_share("123456", &first, "invite").unwrap();
+        let mut client = join.finish(&second, &proof, "invite").unwrap();
+
+        let request = client.seal_request(b"credentials").unwrap();
+        assert_eq!(server.open_request(&request).unwrap(), b"credentials");
+        assert!(server.open_request(&request).is_err());
+
+        let response = server.seal_reply(b"accepted").unwrap();
+        assert_eq!(client.open_reply(&response).unwrap(), b"accepted");
+        assert!(client.open_reply(&response).is_err());
+
+        // A modified ciphertext must not be accepted as a valid credentials
+        // message. The channel still consumes the request after this attempt,
+        // preventing a captured exchange from being retried.
+        let (join, first) = start_join("123456").unwrap();
+        let (mut server, second, proof) = start_share("123456", &first, "invite").unwrap();
+        let mut client = join.finish(&second, &proof, "invite").unwrap();
+        let request = client.seal_request(b"credentials").unwrap();
+        let mut bytes = crate::pairing::decode_b64url(&request).unwrap();
+        bytes[0] ^= 1;
+        let tampered = crate::pairing::encode_b64url(&bytes);
+        assert!(server.open_request(&tampered).is_err());
+        assert!(server.open_request(&request).is_err());
+    }
 }
