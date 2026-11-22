@@ -10,6 +10,8 @@ that change the system.
 
 ## Install on NixOS
 
+> The [live ISO installer](docs/live-installer.md) covers fresh installations.
+
 Add the flake input and module:
 
 ```nix
@@ -22,6 +24,7 @@ inputs.yonix.inputs.nixpkgs.follows = "nixpkgs";
 
   programs.yonix = {
     enable = true;
+    # The module adds https://yonix.cachix.org automatically.
     configPath = "/etc/nixos";
     allowSystemChanges = false;
   };
@@ -38,8 +41,6 @@ inputs.yonix.inputs.nixpkgs.follows = "nixpkgs";
 Members of the `yonix` group can use the daemon and edit the configured
 checkout. Use `allowSystemChanges = true` only for administrators. A changed
 NixOS configuration can execute code as root during activation.
-
-The [live ISO installer](docs/live-installer.md) covers fresh installations.
 
 Use `yonix-headless` on servers without GTK:
 

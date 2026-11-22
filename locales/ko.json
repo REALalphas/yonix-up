@@ -104,6 +104,7 @@
     "operationId": "작업 ID",
     "tokenStorageError": "브라우저에 토큰을 저장하지 못했습니다. 페이지를 닫을 때까지 연결이 유지됩니다.",
     "copyPairingLink": "링크 복사",
+    "copyPairingCode": "코드 복사",
     "pairingLink": "페어링 링크",
     "pairingLinkPlaceholder": "페어링 링크 또는 베어 코드를 붙여넣기",
     "pairingOrigin": "시작 호스트 주소(베어 코드용)",
@@ -122,7 +123,7 @@
     "statusRollingBack": "롤백 중",
     "statusCleaning": "정리 중",
     "addConnection": "Add connection",
-    "addConnectionHelp": "Share a link to pair with another Yonix instance",
+    "addConnectionHelp": "다른 Yonix 인스턴스와 페어링하려면 6자리 코드를 공유하세요",
     "addOtherInstance": "Add another instance",
     "back": "Back",
     "advanced": "Advanced"

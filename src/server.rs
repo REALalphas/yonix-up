@@ -14,12 +14,15 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
+mod lan;
+
 include!(concat!(env!("OUT_DIR"), "/web_assets.rs"));
 
 #[derive(Clone)]
 struct App {
     engine: Engine,
     token: Arc<String>,
+    lan: Arc<lan::Handshakes>,
 }
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -96,7 +99,12 @@ async fn protect(State(app): State<App>, request: Request, next: Next) -> Respon
     // without knowing any token yet. Minting and accepting stay
     // token-authenticated (accept runs on the joiner daemon and needs its
     // private token).
-    if request.uri().path().starts_with("/api/") && request.uri().path() != "/api/pairings/redeem" {
+    if request.uri().path().starts_with("/api/")
+        && !matches!(
+            request.uri().path(),
+            "/api/pairings/redeem" | "/api/pairings/hello" | "/api/pairings/finish"
+        )
+    {
         let token = headers
             .get(header::AUTHORIZATION)
             .and_then(|v| v.to_str().ok())
@@ -119,9 +127,12 @@ pub fn router(engine: Engine, token: String) -> Router {
     let app = App {
         engine,
         token: Arc::new(token),
+        lan: Arc::default(),
     };
     Router::new()
         .route("/api/pairings", post(mint_pairing))
+        .route("/api/pairings/hello", post(lan::hello))
+        .route("/api/pairings/finish", post(lan::finish))
         .route("/api/pairings/redeem", post(redeem_pairing))
         .route("/api/pairings/accept", post(accept_pairing))
         .route("/api/connections", get(connections).post(add_connection))
@@ -203,6 +214,12 @@ pub async fn run(config: Config) -> Result<()> {
     let engine = Engine::open(config.clone())?;
     let token = crate::engine::ensure_token(&config)?;
     let listener = tokio::net::TcpListener::bind((config.listen_address, config.port)).await?;
+    let discovery_engine = engine.clone();
+    tokio::spawn(async move {
+        if let Err(error) = crate::discovery::respond(discovery_engine).await {
+            eprintln!("Yonix LAN discovery unavailable: {error:#}");
+        }
+    });
     let display = match config.listen_address {
         std::net::IpAddr::V4(address) => address.to_string(),
         std::net::IpAddr::V6(address) => format!("[{address}]"),
@@ -213,11 +230,14 @@ pub async fn run(config: Config) -> Result<()> {
     let mut terminate = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
     let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
     let server = async move {
-        axum::serve(listener, router(engine, token))
-            .with_graceful_shutdown(async move {
-                let _ = shutdown_rx.await;
-            })
-            .await
+        axum::serve(
+            listener,
+            router(engine, token).into_make_service_with_connect_info::<std::net::SocketAddr>(),
+        )
+        .with_graceful_shutdown(async move {
+            let _ = shutdown_rx.await;
+        })
+        .await
     };
     tokio::pin!(server);
     let target = tokio::select! {
@@ -391,30 +411,61 @@ async fn forward(app: App, host: String, path: String, body: Option<Start>) -> R
     }
 }
 
+fn advertised_address(config: &Config, headers: &axum::http::HeaderMap) -> std::net::SocketAddr {
+    use std::net::{IpAddr, SocketAddr};
+    let port = config.port;
+    if !config.listen_address.is_unspecified() {
+        return SocketAddr::new(config.listen_address, port);
+    }
+    let family_v4 = config.listen_address.is_ipv4();
+    let eligible = |addr: &IpAddr| {
+        addr.is_ipv4() == family_v4
+            && !addr.is_loopback()
+            && crate::peers::validate_peer_url(&format!("http://{}", SocketAddr::new(*addr, port)))
+                .is_ok()
+    };
+    let interfaces = if_addrs::get_if_addrs().unwrap_or_default();
+    let mut addresses = interfaces.iter().map(|i| i.ip()).filter(eligible);
+    let browser_host = headers
+        .get(header::HOST)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.parse::<SocketAddr>().ok())
+        .map(|s| s.ip());
+    let ip = browser_host
+        .filter(|ip| addresses.clone().any(|a| a == *ip))
+        .or_else(|| addresses.next())
+        .unwrap_or_else(|| {
+            if family_v4 {
+                std::net::Ipv4Addr::LOCALHOST.into()
+            } else {
+                std::net::Ipv6Addr::LOCALHOST.into()
+            }
+        });
+    SocketAddr::new(ip, port)
+}
+
 /// Mint a one-time pairing code (token-authenticated). The response carries
-/// the code plus a ready `base64url(payload)#code` link built from this
+/// the code plus a compact address link built from this
 /// daemon's own reachable origin. The login token never leaves the daemon.
-async fn mint_pairing(State(app): State<App>) -> Result<Json<serde_json::Value>, ApiError> {
-    let code = app
+async fn mint_pairing(
+    State(app): State<App>,
+    headers: axum::http::HeaderMap,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let (code, expires_in) = app
         .engine
         .connections
         .mint_pairing()
         .map_err(|e| error(StatusCode::CONFLICT, e))?;
-    let origin = app.engine.config.base_url();
-    let payload = crate::pairing::PairPayload {
-        v: 1,
-        host: app.engine.config.host.clone(),
-        paths: vec![crate::pairing::PathCandidate {
-            url: format!("{}/", origin.trim_end_matches('/')),
-            role: crate::pairing::PathRole::Direct,
-        }],
-    };
-    let link = crate::pairing::encode_link(&payload, &code)
+    let config = &app.engine.config;
+    let address = advertised_address(config, &headers);
+    let link = crate::pairing::compact_link(address, &code)
         .map_err(|e| error(StatusCode::INTERNAL_SERVER_ERROR, e))?;
-    Ok(Json(serde_json::json!({"code": code, "link": link})))
+    Ok(Json(
+        serde_json::json!({"code": code, "link": link, "expires_in": expires_in}),
+    ))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 struct RedeemRequest {
     code: String,
     /// Joiner-side facts the initiator stores with its own connection entry.
@@ -423,7 +474,7 @@ struct RedeemRequest {
     url: String,
 }
 
-#[derive(Serialize)]
+#[derive(Deserialize, Serialize)]
 struct RedeemResponse {
     host: String,
     version: String,
@@ -432,16 +483,22 @@ struct RedeemResponse {
     pair_id: String,
 }
 
-/// Redeem a pairing code. Authenticated by the one-time code, not by any
-/// login token: the joiner proves the out-of-band secret and offers its own
-/// login token in the same call. The server burns the code first, then
-/// returns its own login token so both sides store the mirrored entry.
+/// Redeem a legacy invitation that was already outstanding before the upgrade.
 async fn redeem_pairing(
     State(app): State<App>,
     Json(body): Json<RedeemRequest>,
 ) -> Result<Json<RedeemResponse>, ApiError> {
-    let code = body.code.trim().to_string();
-    crate::pairing::validate_code(&code).map_err(|e| error(StatusCode::BAD_REQUEST, e))?;
+    app.lan.admit_attempt()?;
+    complete_redeem(&app, body, None).map(Json)
+}
+
+fn complete_redeem(
+    app: &App,
+    body: RedeemRequest,
+    invite_id: Option<&str>,
+) -> Result<RedeemResponse, ApiError> {
+    let code = crate::pairing::normalize_code(&body.code)
+        .map_err(|e| error(StatusCode::BAD_REQUEST, e))?;
     let joiner_host = body.host.trim().to_string();
     if joiner_host.is_empty()
         || joiner_host.len() > 64
@@ -456,45 +513,40 @@ async fn redeem_pairing(
     }
     let joiner_url = body.url.trim().trim_end_matches('/').to_string();
     crate::peers::validate_peer_url(&joiner_url).map_err(|e| error(StatusCode::BAD_REQUEST, e))?;
-    // Burn before doing anything else: a valid code works exactly once even
-    // if the rest of the redeem fails afterwards.
+    let pair_id = format!(
+        "pair-{}",
+        now_hex_id().map_err(|e| error(StatusCode::INTERNAL_SERVER_ERROR, e))?
+    );
+    let token = app
+        .engine
+        .connections
+        .local_token()
+        .map_err(|e| error(StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    let input = crate::peers::ConnectionInput {
+        label: joiner_host,
+        url: joiner_url,
+        token: body.token,
+        pair_id: Some(pair_id.clone()),
+    };
     if !app
         .engine
         .connections
-        .redeem_local(&code)
-        .map_err(|e| error(StatusCode::INTERNAL_SERVER_ERROR, e))?
+        .redeem_paired(&code, invite_id, input)
+        .map_err(|e| error(StatusCode::CONFLICT, e))?
     {
         return Err(error(
             StatusCode::UNAUTHORIZED,
             "Unknown or expired pairing code",
         ));
     }
-    let pair_id = format!(
-        "pair-{}",
-        now_hex_id().map_err(|e| error(StatusCode::INTERNAL_SERVER_ERROR, e))?
-    );
-    app.engine
-        .connections
-        .add_paired(
-            joiner_host.clone(),
-            joiner_url.clone(),
-            body.token.clone(),
-            pair_id.clone(),
-        )
-        .map_err(|e| error(StatusCode::CONFLICT, e))?;
-    let token = app
-        .engine
-        .connections
-        .local_token()
-        .map_err(|e| error(StatusCode::INTERNAL_SERVER_ERROR, e))?;
     let status = app.engine.status();
-    Ok(Json(RedeemResponse {
+    Ok(RedeemResponse {
         host: status.host,
         version: status.version,
         token,
         url: app.engine.config.base_url(),
         pair_id,
-    }))
+    })
 }
 
 fn now_hex_id() -> anyhow::Result<String> {
@@ -532,16 +584,36 @@ async fn accept_pairing(
         .map(|path| (path.url.clone(), path.role))
         .collect();
     if paths.is_empty() {
-        let Some(origin) = body.origin.filter(|o| !o.trim().is_empty()) else {
-            return Err(error(
-                StatusCode::BAD_REQUEST,
-                "Bare code needs an initiator address; add --origin or paste a full link",
-            ));
-        };
-        match crate::pairing::validate_candidate(origin.trim(), PathRole::Direct) {
-            Ok(()) => paths.push((origin.trim().to_string(), PathRole::Direct)),
-            Err(e) => return Err(error(StatusCode::BAD_REQUEST, e)),
+        if let Some(origin) = body.origin.filter(|o| !o.trim().is_empty()) {
+            match crate::pairing::validate_candidate(origin.trim(), PathRole::Direct) {
+                Ok(()) => paths.push((origin.trim().to_string(), PathRole::Direct)),
+                Err(e) => return Err(error(StatusCode::BAD_REQUEST, e)),
+            }
+        } else {
+            return lan::accept(&app, &parsed.code, body.label).await;
         }
+    }
+    // Only unversioned, explicitly shared invitations from the old release
+    // use its legacy HTTP exchange. All new routes require a PIN proof.
+    if body.link.trim().starts_with(['~', '!']) || parsed.payload.paths.is_empty() {
+        let mut candidates = Vec::new();
+        for (url, role) in &paths {
+            if *role == PathRole::Relay || (*role == PathRole::Public && !body.allow_public) {
+                continue;
+            }
+            for origin in crate::pairing::resolve_checked(url, *role).unwrap_or_default() {
+                let parsed =
+                    reqwest::Url::parse(&origin).map_err(|e| error(StatusCode::BAD_REQUEST, e))?;
+                if let Ok(addresses) = parsed.socket_addrs(|| Some(80)) {
+                    for addr in addresses {
+                        if candidates.len() < 16 && !candidates.contains(&addr) {
+                            candidates.push(addr);
+                        }
+                    }
+                }
+            }
+        }
+        return lan::accept_candidates(&app, &parsed.code, body.label, candidates).await;
     }
     let own_token = app
         .engine

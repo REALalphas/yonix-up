@@ -7,6 +7,8 @@
 }:
 let
   cfg = config.programs.yonix;
+  officialCacheUrl = "https://yonix.cachix.org";
+  officialCachePublicKey = "yonix.cachix.org-1:tuJfS1bMNuVctofrHgbmUcfYcqLfjieOmOI42ccjaqg=";
   inherit (lib)
     mkOption
     mkEnableOption
@@ -124,7 +126,7 @@ in
       default = config.networking.hostName;
       description = "nixosConfigurations attribute to manage.";
     };
-    openFirewall = mkEnableOption "opening the configured Yonix TCP port";
+    openFirewall = mkEnableOption "opening the configured Yonix TCP port and LAN discovery on UDP 9847";
     listenAddress = mkOption {
       type = types.str;
       default = "127.0.0.1";
@@ -139,6 +141,11 @@ in
       type = types.bool;
       default = false;
       description = "Allow yonix group members and API token holders to request switch, rollback and cleanup through the daemon. Treat them as system administrators: the configured flake can execute code as root during activation.";
+    };
+    useOfficialCache = mkOption {
+      type = types.bool;
+      default = true;
+      description = "Use the official signed Yonix binary cache at https://yonix.cachix.org.";
     };
     peers = mkOption {
       default = { };
@@ -243,7 +250,8 @@ in
       programs.yonix.user is deprecated and will be removed in a future release.
       Yonix now runs as the shared yonix system user. Add ${cfg.user} to the yonix
       group with users.users.${cfg.user}.extraGroups = [ "yonix" ], then remove
-      programs.yonix.user.
+      programs.yonix.user. When upgrading from a release that ran as ${cfg.user},
+      restart yonix.service after activation to apply the new service credentials.
     '';
     assertions = [
       {
@@ -300,11 +308,20 @@ in
       after = [ "yonix-cache-key.service" ];
       requires = [ "yonix-cache-key.service" ];
     };
-    nix.settings.extra-substituters = map (cache: cache.url) (builtins.attrValues cfg.caches);
-    nix.settings.extra-trusted-public-keys = map (cache: cache.publicKey) (
-      builtins.attrValues cfg.caches
+    nix.settings.extra-substituters = lib.unique (
+      lib.optional cfg.useOfficialCache officialCacheUrl
+      ++ map (cache: cache.url) (builtins.attrValues cfg.caches)
     );
+    nix.settings.extra-trusted-public-keys = lib.unique (
+      lib.optional cfg.useOfficialCache officialCachePublicKey
+      ++ map (cache: cache.publicKey) (builtins.attrValues cfg.caches)
+    );
+    # Let remote builders fetch their own dependencies from their substituters.
+    # This avoids sending large dependency closures from a slow client before
+    # the remote build can start.
+    nix.settings.builders-use-substitutes = lib.mkDefault true;
     environment.systemPackages = [ cfg.package ];
+    networking.firewall.allowedUDPPorts = lib.optionals cfg.openFirewall [ 9847 ];
     networking.firewall.allowedTCPPorts = lib.optionals cfg.openFirewall [ cfg.port ];
     environment.etc."yonix/config.json".source = json.generate "yonix-config.json" settings;
     nix.settings.experimental-features = [
@@ -351,7 +368,9 @@ in
     security.sudo.enable = mkIf cfg.allowSystemChanges true;
     security.sudo.extraRules = lib.optionals cfg.allowSystemChanges [
       {
-        users = [ "yonix" ];
+        # Self-reexec preserves the old daemon's credentials. Keep the legacy
+        # operator authorized until systemd starts it as yonix.
+        users = lib.unique ([ "yonix" ] ++ lib.optional (cfg.user != null) cfg.user);
         commands =
           map
             (action: {

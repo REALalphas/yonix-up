@@ -56,7 +56,7 @@ In your NixOS configuration:
 programs.yonix = {
   enable = true;
   listenAddress = "10.0.0.10";
-  openFirewall = true; # opens TCP port 9847 in nixos firewall
+  openFirewall = true; # opens the API TCP port and discovery UDP port 9847
 };
 ```
 

@@ -19,10 +19,36 @@ body { margin:0; }
 @media(max-width:600px) { .actions-grid,.system-grid { grid-template-columns:minmax(0,1fr); } .login-layout { padding:var(--as-space-4); } }
 .page-actions { display:flex; justify-content:flex-end; gap:var(--as-space-3); }
 .pairing-share-actions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:var(--as-space-3); }
-.pairing-row { display:grid; grid-template-columns:minmax(0,3fr) minmax(8rem,1fr); gap:var(--as-space-5); }
-@media(max-width:600px) { .pairing-row { grid-template-columns:minmax(0,1fr); } }
 .connections-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:var(--as-space-5); align-items:start; }
 @media(max-width:1100px) { .connections-grid { grid-template-columns:minmax(0,1fr); } }
 @media(max-width:600px) { .operation-details { grid-template-columns:minmax(0,1fr); } }
 
 .application-layout { display:grid; min-height:100dvh; }
+/* Each digit is a native input so paste, selection, and autofill stay available. */
+.pairing-code-grid { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:clamp(.25rem,1.4vw,.75rem); }
+.pairing-code-field {
+    width:100%;
+    min-width:0;
+    min-height:clamp(3rem,9vw,4.5rem);
+    padding:0;
+    border:1px solid var(--as-color-border);
+    border-radius:var(--as-radius-control);
+    background:var(--as-color-canvas);
+    color:var(--as-color-text);
+    font:600 clamp(1.25rem,4vw,2rem)/1 var(--as-font-mono,monospace);
+    text-align:center;
+}
+.pairing-code-field:focus-visible { outline:2px solid var(--as-color-focus); outline-offset:2px; }
+.pairing-copy-buffer { position:fixed; inset:0 auto auto 0; width:1px; height:1px; opacity:0; }
+@media(prefers-reduced-motion:no-preference) {
+    .pairing-code-display .pairing-code-field:not(:disabled) { animation:pairing-code-in .35s ease both; }
+    .pairing-code-display .pairing-code-field:nth-child(2) { animation-delay:.035s; }
+    .pairing-code-display .pairing-code-field:nth-child(3) { animation-delay:.07s; }
+    .pairing-code-display .pairing-code-field:nth-child(4) { animation-delay:.105s; }
+    .pairing-code-display .pairing-code-field:nth-child(5) { animation-delay:.14s; }
+    .pairing-code-display .pairing-code-field:nth-child(6) { animation-delay:.175s; }
+    @keyframes pairing-code-in {
+        from { opacity:0; transform:perspective(240px) rotateX(-55deg) translateY(-.25rem); }
+        to { opacity:1; transform:none; }
+    }
+}

@@ -84,14 +84,44 @@ fn inputs_update_does_not_apply() {
     );
 }
 #[test]
-fn diff_builds_then_compares_running_system() {
-    let (_dir, config) = fixture();
+fn flake_diff_builds_and_compares_the_state_result_link() {
+    let (_dir, mut config) = fixture();
+    config.source_mode = "path".into();
+    let result = config.state_dir.join("result");
+    let result = result.to_str().unwrap();
+    let target = format!(
+        "path:{}#nixosConfigurations.nas.config.system.build.toplevel",
+        config.config_path.display()
+    );
     let steps = plan(&config, Action::Diff).unwrap();
     assert_eq!(steps.len(), 2);
+    assert_eq!(steps[0].program, "nix");
     assert_eq!(
-        steps[1].args[2..5],
-        ["store", "diff-closures", "/run/current-system"]
+        steps[0].args,
+        [
+            "--extra-experimental-features",
+            "nix-command flakes",
+            "build",
+            "--no-write-lock-file",
+            "--out-link",
+            result,
+            &target,
+        ]
     );
+    assert!(steps[0].cwd.is_none());
+    assert_eq!(steps[1].program, "nix");
+    assert_eq!(
+        steps[1].args,
+        [
+            "--extra-experimental-features",
+            "nix-command flakes",
+            "store",
+            "diff-closures",
+            "/run/current-system",
+            result,
+        ]
+    );
+    assert!(steps[1].cwd.is_none());
 }
 #[test]
 fn changes_require_explicit_helper() {
@@ -125,6 +155,8 @@ fn client_tokens_cannot_be_sent_to_remote_http() {
     for url in [
         "http://example.org",
         "http://192.168.1.5:9847",
+        "http://[fd00::1]:9847",
+        "http://[::]:9847",
         "https://127.0.0.1:9847",
         "http://secret@127.0.0.1:9847",
         "http://127.0.0.1:9847/path",
@@ -133,6 +165,16 @@ fn client_tokens_cannot_be_sent_to_remote_http() {
         assert!(validate_base_url(url).is_err(), "{url}");
     }
 }
+
+#[test]
+fn client_accepts_an_explicit_ipv6_loopback_url() {
+    let (dir, config) = fixture();
+    let token_file = dir.path().join("client-token");
+    fs::write(&token_file, "a".repeat(64)).unwrap();
+    yonix::client::Client::new(&config, Some("http://[::1]:9847".into()), Some(token_file))
+        .expect("a numeric IPv6 loopback URL is valid for a local SSH tunnel");
+}
+
 #[test]
 fn token_is_private_and_stable() {
     use std::os::unix::fs::PermissionsExt;
@@ -263,15 +305,29 @@ fn legacy_plans_use_nixos_rebuild_without_flake_flags() {
             .iter()
             .any(|a| a == "--flake" || a.contains('#'))
     );
-    let diff = plan(&config, Action::Diff).unwrap();
-    assert_eq!(diff.len(), 2);
-    assert_eq!(diff[0].program, "nixos-rebuild");
-    assert_eq!(diff[0].args.last().unwrap(), "build");
+}
+
+#[test]
+fn legacy_diff_builds_in_state_dir_and_compares_its_result_link() {
+    let (_dir, config) = legacy_fixture();
+    let build = plan(&config, Action::Build).unwrap();
+    let steps = plan(&config, Action::Diff).unwrap();
+    assert_eq!(steps.len(), 2);
+    assert_eq!(steps[0], build[0]);
+    assert_eq!(steps[0].cwd.as_ref(), Some(&config.state_dir));
+    assert_eq!(steps[1].program, "nix");
     assert_eq!(
-        diff[1].args[2..5],
-        ["store", "diff-closures", "/run/current-system"]
+        steps[1].args,
+        [
+            "--extra-experimental-features",
+            "nix-command flakes",
+            "store",
+            "diff-closures",
+            "/run/current-system",
+            config.state_dir.join("result").to_str().unwrap(),
+        ]
     );
-    assert!(diff[1].args.last().unwrap().ends_with("state/result"));
+    assert!(steps[1].cwd.is_none());
 }
 
 #[test]
@@ -455,6 +511,7 @@ fn pairing_bare_code_has_no_paths() {
     let parsed = parse_link(&code).unwrap();
     assert_eq!(parsed.code, code);
     assert!(parsed.payload.paths.is_empty());
+    assert_eq!(parse_link("731-045").unwrap().code, code);
 }
 
 #[test]

@@ -8,9 +8,11 @@ The selector applies to the web panel. CLI and the native GTK window continue to
 
 Open **Connections** in the sidebar (or the bottom navigation on a small screen). To pair two hosts:
 
-1. Copy the generated **Pairing link** from the initiator host.
-2. On the connecting host, paste the link under **Connections** and click **Accept and pair** (or enter a 6-digit code with the initiator's address).
-3. Confirm if connecting over a public address.
+1. Open **Add connection** on either host. It shows six digits. **Copy code** copies all six, including leading zeros.
+2. On the other host, open **Add connection → Add another instance**, enter or paste the code, and choose **Accept and pair**. Both hosts save a connection. The code works once and rotates after ten minutes while the sharing screen is open.
+3. For a routed network or IPv6, copy the full invitation from **Advanced** and paste it into the code fields on the other host. The invitation carries the address and port. Both daemons need a reachable return path.
+
+Code-only discovery uses IPv4 multicast on the same trusted LAN (UDP 9847). Each daemon also needs its configured TCP port open. The NixOS option `openFirewall` opens both ports. A loopback-only daemon can pair with another instance on the same machine. Across machines, configure a private listen address or a wildcard on both. The new pairing handshake uses SPAKE2 and ChaCha20-Poly1305 to protect the credential exchange. Subsequent management requests still use HTTP over the trusted LAN, VPN or tunnel.
 
 The paired host immediately appears in **Managed host**. Panel-created connections and their credentials are saved in `connections.json` inside the private state directory (`/var/lib/yonix` with the NixOS module), with mode `0600`. This runtime state survives package rebuilds and daemon restarts; treat its backups as secrets.
 
@@ -98,6 +100,56 @@ programs.yonix.caches.nas = {
 Repeat the publisher/client settings in the opposite direction for bidirectional reuse. Pin keys only after verifying them on the intended host. Cache signing keys and management API tokens are independent. The cache endpoint provides read access to store contents; restrict its network access accordingly.
 
 Rebuild once to configure the relationship. Subsequent Nix builds automatically check the cache for matching paths. This is on-demand substitution: availability follows the publisher's local store and garbage collection. Source/lock inputs and architecture determine reuse. A cache does not make different configurations identical. Cache failures remain ordinary Nix substitution failures, with the normal local/upstream fallback.
+
+## Populate a cache from GitHub Actions
+
+GitHub Actions' own cache is scoped to workflow runs and is not a Nix
+substituter that an installed NixOS client can query. Use a Nix binary-cache
+service, such as Cachix or a self-hosted Attic/Harmonia instance, and let a
+GitHub Actions job build the exact NixOS system closure and publish it there.
+
+The Yonix NixOS module already trusts the project cache:
+
+```nix
+programs.yonix.enable = true;
+```
+
+It adds `https://yonix.cachix.org` and its signing key to Nix. Set
+`programs.yonix.useOfficialCache = false` to opt out. Standalone Nix clients can
+add the same URL and key manually:
+
+```nix
+nix.settings.extra-substituters = [ "https://yonix.cachix.org" ];
+nix.settings.extra-trusted-public-keys = [
+  "yonix.cachix.org-1:tuJfS1bMNuVctofrHgbmUcfYcqLfjieOmOI42ccjaqg="
+];
+```
+
+The repository includes a publishing workflow at
+`.github/workflows/binary-cache.yml`. Set the `CACHIX_CACHE` repository
+variable and `CACHIX_AUTH_TOKEN` repository secret before enabling it. The
+workflow waits for the `CI` workflow to pass on a push to `main`, then builds
+the public `.#default` and `.#yonix-headless` packages and pushes their
+closures. To
+publish a system configuration instead, change the build target to the same
+flake revision and `nixosConfigurations.<host>.config.system.build.toplevel`
+target used by the client:
+
+```yaml
+- uses: cachix/install-nix-action@v31
+- uses: cachix/cachix-action@v15
+  with:
+    name: ${{ vars.CACHIX_CACHE }}
+    authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+- run: >-
+    nix build ".#nixosConfigurations.${{ vars.NIXOS_HOST }}.config.system.build.toplevel"
+    --no-link --print-out-paths | cachix push "${{ vars.CACHIX_CACHE }}"
+```
+
+After the first successful publish, Nix fetches matching package paths from the
+cache before compiling locally. When the workflow targets a system
+configuration, the same mechanism applies to that system closure. GitHub's
+runner performs the expensive build while the client downloads the result.
 
 This version does not synchronize configuration repositories, schedule updates, or automatically activate systems. Build/check/apply actions are initiated in the selected host's panel.
 

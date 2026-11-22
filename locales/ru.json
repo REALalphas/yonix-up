@@ -104,6 +104,7 @@
     "operationId": "ID операции",
     "tokenStorageError": "Браузер не смог сохранить токен. Подключение сохранится до закрытия страницы.",
     "copyPairingLink": "Скопировать ссылку",
+    "copyPairingCode": "Скопировать код",
     "pairingLink": "Ссылка для подключения",
     "pairingLinkPlaceholder": "Вставьте ссылку подключения или код вручную",
     "pairingOrigin": "Адрес инициатора (для ввода кода вручную)",
@@ -122,7 +123,7 @@
     "statusRollingBack": "Откат",
     "statusCleaning": "Очистка",
     "addConnection": "Добавить подключение",
-    "addConnectionHelp": "Поделитесь ссылкой для соединения с другим экземпляром Yonix",
+    "addConnectionHelp": "Поделитесь шестизначным кодом, чтобы подключить другой экземпляр Yonix",
     "addOtherInstance": "Добавить другой инстанс",
     "back": "Назад",
     "advanced": "Дополнительно"

@@ -104,6 +104,7 @@
     "operationId": "操作 ID",
     "tokenStorageError": "浏览器无法保存令牌。连接将保持到页面关闭。",
     "copyPairingLink": "复制链接",
+    "copyPairingCode": "复制验证码",
     "pairingLink": "配对链接",
     "pairingLinkPlaceholder": "粘贴配对链接或裸码",
     "pairingOrigin": "发起方地址（裸码用）",
@@ -122,7 +123,7 @@
     "statusRollingBack": "回滚中",
     "statusCleaning": "清理中",
     "addConnection": "Add connection",
-    "addConnectionHelp": "Share a link to pair with another Yonix instance",
+    "addConnectionHelp": "分享六位验证码以配对另一台 Yonix 实例",
     "addOtherInstance": "Add another instance",
     "back": "Back",
     "advanced": "Advanced"

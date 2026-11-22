@@ -82,7 +82,7 @@ enum Commands {
     Logs { id: String },
     /// Print the private API token for browser sign-in
     Token,
-    /// Generate a two-way pairing link: base64url(payload)#PAIRING_CODE
+    /// Generate a short invitation for two-way pairing
     Pair {
         /// Explicit initiator origin, e.g. http://10.0.0.1:9847
         #[arg(long)]
@@ -99,9 +99,9 @@ enum Commands {
     },
     /// Redeem a pairing link or bare code and link both hosts
     PairAccept {
-        /// Full link (base64url#code) or a bare 6-digit code (provide initiator address via --origin)
+        /// Full invitation or the six-digit code from a host on the local network
         link: String,
-        /// Initiator address when redeeming a bare code
+        /// Optional initiator address when multicast discovery is unavailable
         #[arg(long)]
         origin: Option<String>,
         /// Label for the saved connection
@@ -160,13 +160,26 @@ fn pair_command(
     // Mint a one-time server-side code: the daemon owns expiry and single
     // use, so a copied link cannot outlive or replay the pairing.
     let client = Client::new(config, None, None)?;
-    let code: String = client
-        .post_json("/api/pairings", &serde_json::json!({}))?
+    let invitation = client.post_json("/api/pairings", &serde_json::json!({}))?;
+    let code: String = invitation
         .get("code")
         .and_then(|code| code.as_str())
         .context("Pairing server did not return a code")?
         .into();
-    let primary = origin.unwrap_or_else(|| config.base_url());
+    let default_link = invitation["link"]
+        .as_str()
+        .context("Missing pairing invitation")?;
+    let advertised = yonix::pairing::parse_link(default_link)?;
+    let use_default = origin.is_none() && extra_paths.is_empty();
+    let primary = origin
+        .or_else(|| {
+            advertised
+                .payload
+                .paths
+                .first()
+                .map(|path| path.url.clone())
+        })
+        .context("Missing initiator address in invitation")?;
     let mut paths = vec![PathCandidate {
         url: primary,
         role: PathRole::Direct,
@@ -187,7 +200,11 @@ fn pair_command(
         host: config.host.clone(),
         paths,
     };
-    let link = yonix::pairing::encode_link(&payload, &code)?;
+    let link = if use_default {
+        default_link.to_owned()
+    } else {
+        format!("!{}", yonix::pairing::encode_link(&payload, &code)?)
+    };
     if json {
         println!(
             "{}",
@@ -215,103 +232,27 @@ fn pair_accept_command(
 ) -> Result<()> {
     use yonix::pairing::PathRole;
     let parsed = yonix::pairing::parse_link(&link)?;
-    let mut paths: Vec<(String, PathRole)> = parsed
+    let public = parsed
         .payload
         .paths
         .iter()
-        .map(|path| (path.url.clone(), path.role))
-        .collect();
-    if paths.is_empty() {
-        let Some(origin) = origin else {
-            bail!(
-                "Bare code {}: pass --origin <url> to specify the initiator address manually",
-                parsed.code
-            );
-        };
-        paths.push((origin, PathRole::Direct));
+        .any(|p| p.role == PathRole::Public);
+    if public {
+        confirm("Allow public pairing paths?", false, theme)?;
     }
-    let own_token = yonix::engine::read_token(config)?;
-    let own_base = config.base_url().trim_end_matches('/').to_string();
-    let mut failures: Vec<String> = Vec::new();
-    for (url, role) in &paths {
-        // Relay paths parse for display but never carry pairing traffic until
-        // a relay review lands; skip them instead of failing the whole link.
-        if *role == PathRole::Relay {
-            failures.push(format!("{url}: relay paths are not dialed yet"));
-            continue;
-        }
-        // Public paths are reachable but untrusted: ask explicitly.
-        if *role == PathRole::Public {
-            confirm(
-                &format!("Path {url} is a public address. Pair over it anyway?"),
-                false,
-                theme,
-            )?;
-        }
-        let dial = match yonix::pairing::resolve_checked(url, *role) {
-            Ok(dial) => dial,
-            Err(error) => {
-                failures.push(format!("{url}: {error:#}"));
-                continue;
-            }
-        };
-        for candidate in dial {
-            match Client::post_no_auth(
-                &candidate,
-                "/api/pairings/redeem",
-                &serde_json::json!({
-                    "code": parsed.code,
-                    "host": config.host,
-                    "token": own_token,
-                    "url": own_base,
-                }),
-            ) {
-                Ok(reply) => {
-                    let pair_id = reply
-                        .get("pair_id")
-                        .and_then(|id| id.as_str())
-                        .context("Pairing server did not return a pair id")?;
-                    let peer_host = reply
-                        .get("host")
-                        .and_then(|host| host.as_str())
-                        .unwrap_or(parsed.payload.host.as_str());
-                    let peer_token = reply
-                        .get("token")
-                        .and_then(|token| token.as_str())
-                        .context("Pairing server did not return a token")?;
-                    let name = label.clone().unwrap_or_else(|| {
-                        if peer_host.is_empty() {
-                            "peer".into()
-                        } else {
-                            peer_host.into()
-                        }
-                    });
-                    let local = Client::new(config, None, None)?;
-                    // Persist via the daemon so both sides agree on the
-                    // pairing id and credentials live in the private store.
-                    local.post_json(
-                        "/api/connections",
-                        &serde_json::json!({
-                            "label": name,
-                            "url": url,
-                            "token": peer_token,
-                            "pair_id": pair_id,
-                        }),
-                    )?;
-                    println!(
-                        "{} Paired with {} via {} (pair {})",
-                        theme.check(),
-                        theme.bold(peer_host),
-                        theme.cyan(url),
-                        theme.dim(pair_id)
-                    );
-                    return Ok(());
-                }
-                Err(error) => failures.push(format!("{candidate}: {error:#}")),
-            }
-        }
-    }
-    bail!("No pairing path worked:\n  {}", failures.join("\n  "));
+    let saved = Client::new(config, None, None)?.post_json(
+        "/api/pairings/accept",
+        &serde_json::json!({
+            "link":link, "origin":origin, "label":label, "allow_public":public,
+        }),
+    )?;
+    println!(
+        "{} Paired with {} via {}",
+        theme.check(),
+        theme.bold(saved["label"].as_str().context("Missing peer label")?),
+        theme.cyan(saved["url"].as_str().context("Missing peer address")?)
+    );
+    Ok(())
 }
 
 fn operation(client: Client, action: Action, theme: &Theme) -> Result<()> {

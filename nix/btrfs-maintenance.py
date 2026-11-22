@@ -142,20 +142,35 @@ class Backend:
         if not size or not free or not 0 <= int(free[1]) <= int(size[1]) or int(size[1]) == 0:
             raise ValueError("Cannot parse Btrfs allocation")
         counters = {}
-        for name in ("total_bytes", "bytes_used", "bytes_reserved", "bytes_pinned",
-                     "bytes_may_use", "bytes_readonly"):
-            value = (Path(self.args.sysfs) / self.uuid / "allocation/metadata" / name).read_text().strip()
+        metadata = Path(self.args.sysfs) / self.uuid / "allocation/metadata"
+        try:
+            value = (metadata / "total_bytes").read_text().strip()
             if not value.isascii() or not value.isdecimal():
-                raise ValueError(f"Invalid metadata counter {name}")
-            counters[name] = int(value)
-        total, used = counters["total_bytes"], counters["bytes_used"]
-        if not 0 <= used <= total or total == 0:
-            raise ValueError("Invalid Btrfs metadata capacity")
-        headroom = total - sum(v for k, v in counters.items() if k != "total_bytes")
-        pressure = used * 100 >= total * 85 or headroom < min(total // 8, 268435456)
+                raise ValueError("Invalid metadata counter total_bytes")
+            counters["total_bytes"] = int(value)
+        except FileNotFoundError:
+            print(f"Btrfs {self.mount}: metadata allocation counters unavailable; "
+                  "using the normal reserve target.", flush=True)
+            pressure = False
+            total = used = headroom = None
+        else:
+            for name in ("bytes_used", "bytes_reserved", "bytes_pinned",
+                         "bytes_may_use", "bytes_readonly"):
+                value = (metadata / name).read_text().strip()
+                if not value.isascii() or not value.isdecimal():
+                    raise ValueError(f"Invalid metadata counter {name}")
+                counters[name] = int(value)
+            total, used = counters["total_bytes"], counters["bytes_used"]
+            if not 0 <= used <= total or total == 0:
+                raise ValueError("Invalid Btrfs metadata capacity")
+            headroom = total - sum(v for k, v in counters.items() if k != "total_bytes")
+            pressure = used * 100 >= total * 85 or headroom < min(total // 8, 268435456)
         target = max(1, min(int(size[1]) // 4, self.args.reserve * (2 if pressure else 1)))
-        print(f"Btrfs {self.mount}: {int(free[1])} bytes unallocated; reserve target {target} bytes; "
-              f"metadata used={used}/{total}, headroom={headroom}, pressure={pressure}.", flush=True)
+        if total is None:
+            print(f"Btrfs {self.mount}: {int(free[1])} bytes unallocated; reserve target {target} bytes.", flush=True)
+        else:
+            print(f"Btrfs {self.mount}: {int(free[1])} bytes unallocated; reserve target {target} bytes; "
+                  f"metadata used={used}/{total}, headroom={headroom}, pressure={pressure}.", flush=True)
         return int(free[1]), target
 
     def balance(self, filters):

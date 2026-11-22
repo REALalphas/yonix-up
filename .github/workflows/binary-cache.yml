@@ -1,0 +1,39 @@
+name: Publish binary cache
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  publish-x86_64:
+    if: >-
+      vars.CACHIX_CACHE != '' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.conclusion == 'success'
+    name: Build and publish x86_64 package
+    runs-on: [self-hosted, large-compute]
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - uses: cachix/install-nix-action@d698718aa798980d17dd749f03beae0b51183399 # v31
+        with:
+          extra_nix_config: |
+            max-jobs = 2
+            cores = 2
+            extra-substituters = https://yonix.cachix.org
+            extra-trusted-public-keys = yonix.cachix.org-1:tuJfS1bMNuVctofrHgbmUcfYcqLfjieOmOI42ccjaqg=
+      - uses: cachix/cachix-action@ad2ddac53f961de1989924296a1f236fcfbaa4fc # v15
+        with:
+          name: ${{ vars.CACHIX_CACHE }}
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      - name: Build and publish the package closure
+        run: >-
+          nix build .#default .#yonix-headless --no-link --print-out-paths |
+          cachix push "${{ vars.CACHIX_CACHE }}"

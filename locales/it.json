@@ -104,6 +104,7 @@
     "operationId": "ID operazione",
     "tokenStorageError": "Il browser non ha potuto salvare il token. La connessione resterà attiva fino alla chiusura della pagina.",
     "copyPairingLink": "Copia collegamento",
+    "copyPairingCode": "Copia codice",
     "pairingLink": "Collegamento di associazione",
     "pairingLinkPlaceholder": "Incolla il collegamento o un codice semplice",
     "pairingOrigin": "Indirizzo iniziatore (per codice semplice)",
@@ -122,7 +123,7 @@
     "statusRollingBack": "Ripristino",
     "statusCleaning": "Pulizia",
     "addConnection": "Add connection",
-    "addConnectionHelp": "Share a link to pair with another Yonix instance",
+    "addConnectionHelp": "Condividi un codice a sei cifre per associare un’altra istanza di Yonix",
     "addOtherInstance": "Add another instance",
     "back": "Back",
     "advanced": "Advanced"

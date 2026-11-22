@@ -245,6 +245,10 @@ class Inspection(unittest.TestCase):
             with patch.object(backend, "command", return_value="Device size: 4000\nDevice unallocated: 123\n"):
                 with self.assertRaises(FileNotFoundError):
                     backend.space()
+            (root / "bytes_pinned").write_text("100000000")
+            (root / "total_bytes").unlink()
+            with patch.object(backend, "command", return_value="Device size: 4000\nDevice unallocated: 123\n"):
+                self.assertEqual(backend.space(), (123, 1000))
             with patch.object(backend, "command", return_value="unknown"):
                 with self.assertRaisesRegex(ValueError, "Cannot parse"):
                     backend.space()

@@ -21,6 +21,33 @@ test('production assets are bundled locally and old client is gone',()=>{const h
 test('host API paths bind jobs and logs to a single selected host',()=>{assert.equal(model.hostPath('web','jobs/job/log'),'hosts/web/jobs/job/log');assert.equal(model.hostPath('local','status'),'hosts/local/status');assert.equal(model.hostPath('odd/id','status'),'hosts/odd%2Fid/status');});
 test('saved credentials restore only valid tokens and can be cleared without affecting language',()=>{const values=new Map([['yonix-language','ru']]);globalThis.localStorage={getItem:key=>values.get(key)??null,setItem:(key,value)=>values.set(key,value),removeItem:key=>values.delete(key)};try{assert.equal(model.storedToken(),'');assert.equal(model.saveToken('a'.repeat(64)),true);assert.equal(model.storedToken(),'a'.repeat(64));model.clearToken();assert.equal(model.storedToken(),'');assert.equal(values.get('yonix-language'),'ru');values.set('yonix-access-token','broken');assert.equal(model.storedToken(),'');}finally{delete globalThis.localStorage;}});
 test('blocked browser storage still permits a memory-only session',()=>{globalThis.localStorage={getItem:()=>{throw new Error('blocked');},setItem:()=>{throw new Error('blocked');},removeItem:()=>{throw new Error('blocked');}};try{assert.equal(model.storedToken(),'');assert.equal(model.saveToken('a'.repeat(64)),false);assert.doesNotThrow(()=>model.clearToken());}finally{delete globalThis.localStorage;}});
-test('history renders oldest to newest and keeps metadata and logs out of the strip',async()=>{const {HistoryPage}=await server.ssrLoadModule('/History.tsx');const html=renderToStaticMarkup(createElement(HistoryPage,{jobs:[{id:'new-job',action:'build',status:'succeeded',started:20,finished:21},{id:'old-job',action:'check',status:'failed',started:10,error:'Failed safely'}],selected:'new-job',log:'selected log',host:'nas',language:'en',t:key=>i18n.catalogs.en[key]??key,onSelect:()=>{},onSystem:()=>{}}));const strip=html.slice(0,html.indexOf('class="as-card'));assert.ok(strip.indexOf('Check')<strip.indexOf('Build'));assert.ok(!strip.includes('selected log'));assert.ok(!strip.includes('Operation ID'));assert.ok(html.includes('new-job'));assert.ok(html.includes('selected log'));assert.ok(!html.includes('Failed safely'));});
+test('history orders jobs by start time, preserves ties, and shows the selected failure', async () => {
+    const {HistoryPage} = await server.ssrLoadModule('/History.tsx');
+    // The daemon returns newest first. Two jobs started during the same second.
+    const jobs = [
+        {id: 'new-job', action: 'build', status: 'failed', started: 20, finished: 21, error: 'Build failed'},
+        {id: 'selected-job', action: 'check', status: 'failed', started: 20, finished: 20, error: 'Check failed'},
+        {id: 'first-job', action: 'diff', status: 'succeeded', started: 10, finished: 11},
+    ];
+    const html = renderToStaticMarkup(createElement(HistoryPage, {
+        jobs, selected: 'selected-job', log: 'selected job log', host: 'nas', language: 'en',
+        t: key => i18n.catalogs.en[key], onSelect: () => {}, onSystem: () => {},
+    }));
+
+    const detailsStart = html.indexOf('<h2');
+    assert.ok(detailsStart >= 0, 'selected operation heading is missing');
+    const strip = html.slice(0, detailsStart);
+    const details = html.slice(detailsStart);
+    const labels = [...strip.matchAll(/<button\b[^>]*>([\s\S]*?)<\/button>/g)]
+        .map(([, content]) => content.replace(/<[^>]+>/g, '').trim());
+    const en = i18n.catalogs.en;
+    assert.deepEqual(labels, [en.actionDiff, en.actionCheck, en.actionBuild]);
+    assert.ok(!strip.includes(en.operationId));
+    assert.ok(!strip.includes('selected job log'));
+    assert.ok(details.includes('selected-job'));
+    assert.ok(details.includes('Check failed'));
+    assert.ok(details.includes('selected job log'));
+    assert.ok(!details.includes('Build failed'));
+});
 test('action status keys map operations to informative statuses',()=>{assert.equal(model.actionStatusKey('check'),'statusChecking');assert.equal(model.actionStatusKey('build'),'statusBuilding');assert.equal(model.actionStatusKey('diff'),'statusBuilding');assert.equal(model.actionStatusKey('switch'),'statusUpdating');assert.equal(model.actionStatusKey('update-inputs'),'statusUpdating');assert.equal(model.actionStatusKey('rollback'),'statusRollingBack');assert.equal(model.actionStatusKey('clean'),'statusCleaning');assert.equal(model.actionStatusKey(null),'working');assert.equal(i18n.catalogs.en.statusChecking,'Checking');assert.equal(i18n.catalogs.en.statusBuilding,'Building');assert.equal(i18n.catalogs.en.statusUpdating,'Updating');assert.equal(i18n.catalogs.en.statusRollingBack,'Rolling back');assert.equal(i18n.catalogs.en.statusCleaning,'Cleaning');assert.equal(i18n.catalogs.ru.statusChecking,'Проверка');assert.equal(i18n.catalogs.ru.statusBuilding,'Сборка');assert.equal(i18n.catalogs.ru.statusUpdating,'Обновление');assert.equal(i18n.catalogs.ru.statusRollingBack,'Откат');assert.equal(i18n.catalogs.ru.statusCleaning,'Очистка');});
 test('resolveHostStatus resolves action from active_action or jobs list',()=>{assert.equal(model.resolveHostStatus(null,false,''),'connectingShort');assert.equal(model.resolveHostStatus(null,true,'t'),'connectionOffline');assert.equal(model.resolveHostStatus(null,false,'t'),'connectingShort');const idleStatus={active:null,host:'nas',config_path:'/etc',current_system:null,system_changes_enabled:true};assert.equal(model.resolveHostStatus(idleStatus,false,'t'),null);const activeWithAction={...idleStatus,active:'1',active_action:'build'};assert.equal(model.resolveHostStatus(activeWithAction,false,'t'),'statusBuilding');const activeFallbackJob={...idleStatus,active:'2'};const jobs=[{id:'2',action:'rollback',status:'running',started:1}];assert.equal(model.resolveHostStatus(activeFallbackJob,false,'t',jobs),'statusRollingBack');});
