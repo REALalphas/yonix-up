@@ -515,6 +515,17 @@ fn pairing_bare_code_has_no_paths() {
 }
 
 #[test]
+fn compact_pairing_links_round_trip_ipv6_addresses() {
+    let address = "[::1]:54321".parse().unwrap();
+    let link = yonix::pairing::compact_link(address, "482916").unwrap();
+    assert!(link.starts_with('~'));
+    let parsed = yonix::pairing::parse_link(&link).unwrap();
+    assert_eq!(parsed.code, "482916");
+    assert_eq!(parsed.payload.paths.len(), 1);
+    assert_eq!(parsed.payload.paths[0].url, "http://[::1]:54321");
+}
+
+#[test]
 fn pairing_rejects_bad_links_codes_and_paths() {
     use yonix::pairing::{PairPayload, PathCandidate, PathRole, parse_link};
     let payload = PairPayload {

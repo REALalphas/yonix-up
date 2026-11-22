@@ -602,3 +602,37 @@ fn interrupted_pairing_recovers_from_the_persisted_peer_record() {
         }
     }
 }
+
+#[test]
+fn expired_pairing_invites_are_removed_before_a_new_one_is_minted() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let root = tempfile::tempdir().unwrap();
+    let cfg = config(root.path(), "sender");
+    fs::create_dir_all(&cfg.state_dir).unwrap();
+    let journal = cfg.state_dir.join("pairings.json");
+    fs::write(
+        &journal,
+        json!([{
+            "code": "111111",
+            "created": 0,
+            "invite_id": "expired-invite",
+            "committing_pair": null
+        }])
+        .to_string(),
+    )
+    .unwrap();
+    fs::set_permissions(&journal, fs::Permissions::from_mode(0o600)).unwrap();
+
+    let store = yonix::peers::Connections::open(&cfg).unwrap();
+    let loaded: Value = serde_json::from_slice(&fs::read(&journal).unwrap()).unwrap();
+    assert_eq!(loaded, json!([]));
+    let (code, expires_in) = store.mint_pairing().unwrap();
+    assert_eq!(expires_in, 600);
+
+    let pending: Value = serde_json::from_slice(&fs::read(&journal).unwrap()).unwrap();
+    let entries = pending.as_array().unwrap();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0]["code"], code);
+    assert_ne!(entries[0]["invite_id"], "expired-invite");
+}
