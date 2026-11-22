@@ -45,7 +45,7 @@ jobs:
 
   rust:
     name: Rust and GTK
-    runs-on: [self-hosted, large-compute]
+    runs-on: [self-hosted, medium]
     timeout-minutes: 60
     env:
       CARGO_BUILD_JOBS: '2'
@@ -95,7 +95,7 @@ jobs:
 
   nix:
     name: Nix (${{ matrix.target }})
-    runs-on: [self-hosted, large-compute]
+    runs-on: [self-hosted, medium]
     timeout-minutes: 90
     strategy:
       fail-fast: false
