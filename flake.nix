@@ -10,8 +10,8 @@
       ];
       forAllSystems = nixpkgs.lib.genAttrs systems;
       installerSystem = "x86_64-linux";
-      yonixUrl = "github:REALalphas/yonix-up" + nixpkgs.lib.optionalString (self ? rev) "/${self.rev}";
-      nixpkgsUrl = "github:NixOS/nixpkgs/${nixpkgs.rev}";
+      yonixUrl = "github:REALalphas/yonix-up";
+      nixpkgsUrl = "github:NixOS/nixpkgs";
     in
     {
       packages = forAllSystems (
