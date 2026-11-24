@@ -126,5 +126,9 @@
     "addConnectionHelp": "Поділіться шестизначним кодом, щоб під’єднати інший екземпляр Yonix",
     "addOtherInstance": "Add another instance",
     "back": "Back",
-    "advanced": "Advanced"
+    "advanced": "Advanced",
+    "pairingAllow": "Allow pairing",
+    "pairingDisabled": "Pairing is disabled",
+    "pairingExpires": "Code expires in",
+    "pairingExpired": "This pairing code expired. Start a new invitation."
 }

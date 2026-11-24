@@ -1,6 +1,6 @@
-//! Small, single-use cryptographic channel for PIN pairing.
+//! Small, single-use cryptographic channel for pairing-code authentication.
 //!
-//! The PIN is only an SPAKE2 password. This module never broadcasts it or a
+//! The pairing code is only an SPAKE2 password. This module never broadcasts it or a
 //! derivative of it. The resulting channel permits exactly one request and
 //! one response, each protected with a distinct nonce.
 

@@ -396,7 +396,7 @@ pub fn print_pair_info(link: &str, code: &str, host: &str, theme: &Theme) {
     println!(
         "  {:<16} {}",
         theme.bold("Expires:"),
-        theme.dim("10 minutes (single-use)")
+        theme.dim("5 minutes (single-use)")
     );
     println!();
     println!("  {}:", theme.bold("Full Pairing Link"));

@@ -99,7 +99,7 @@ enum Commands {
     },
     /// Redeem a pairing link or bare code and link both hosts
     PairAccept {
-        /// Full invitation or the six-digit code from a host on the local network
+        /// Full invitation or the six-character code from a host on the local network
         link: String,
         /// Optional initiator address when multicast discovery is unavailable
         #[arg(long)]
@@ -160,6 +160,10 @@ fn pair_command(
     // Mint a one-time server-side code: the daemon owns expiry and single
     // use, so a copied link cannot outlive or replay the pairing.
     let client = Client::new(config, None, None)?;
+    client.post_json(
+        "/api/pairings/settings",
+        &serde_json::json!({ "enabled": true }),
+    )?;
     let invitation = client.post_json("/api/pairings", &serde_json::json!({}))?;
     let code: String = invitation
         .get("code")

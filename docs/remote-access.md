@@ -4,7 +4,8 @@ Yonix includes an embedded web panel served directly by its Rust daemon. The ser
 
 ## Architecture and Security
 
-- **Default binding**: Listens on loopback (`127.0.0.1:9847`).
+- **Standalone default binding**: Listens on loopback (`127.0.0.1:9847`).
+- **NixOS module default**: Listens on all IPv4 interfaces and opens TCP/UDP 9847 for LAN pairing.
 - **Authentication**: All API requests require a bearer gateway token generated at daemon initialization.
 - **Header verification**: Enforces strict `Host` and `Origin` checks to prevent DNS rebinding and cross-origin attacks.
 - **Self-contained assets**: Web frontend assets, fonts, and scripts are embedded in the binary and served locally without third-party network requests.

@@ -126,11 +126,15 @@ in
       default = config.networking.hostName;
       description = "nixosConfigurations attribute to manage.";
     };
-    openFirewall = mkEnableOption "opening the configured Yonix TCP port and LAN discovery on UDP 9847";
+    openFirewall = mkOption {
+      type = types.bool;
+      default = true;
+      description = "Open the configured Yonix TCP port and LAN discovery on UDP 9847.";
+    };
     listenAddress = mkOption {
       type = types.str;
-      default = "127.0.0.1";
-      description = "IPv4 bind address; use 0.0.0.0 to listen on all interfaces. Connections use HTTP; use SSH on untrusted networks.";
+      default = "0.0.0.0";
+      description = "IPv4 bind address; defaults to all interfaces so LAN pairing can discover this host. Connections use HTTP; use SSH or a VPN on untrusted networks.";
     };
     port = mkOption {
       type = types.port;

@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState, type ClipboardEvent as ReactClipboardEvent } from 'react';
-import { Button, Card, Checkbox, Icon, Stack, Text, TextInput } from '@alpha/react';
+import { Button, Card, Checkbox, Icon, Stack, Switch, Text, TextInput } from '@alpha/react';
 import { api, ApiError, type Connection, type ConnectionCheck } from './model';
 
 type PairingView = 'closed' | 'share' | 'join';
 const codeLength = 6;
 const emptyCode = () => Array<string>(codeLength).fill('');
-const normalizeCode = (value: string) => /^[0-9\s-]*$/.test(value) ? value.replace(/[\s-]/g, '') : '';
+const normalizeCode = (value: string) => /^[0-9A-HJ-NP-TV-Z\s-]*$/i.test(value) ? value.replace(/[\s-]/g, '').toUpperCase() : '';
 type PairingInvite = { code: string; link: string; expiresAt: number };
 export type PairingSession = {
     invite: PairingInvite | null;
@@ -26,6 +26,9 @@ export function ConnectionsPage({ token, gateway, pairingSession, t, onChange, o
     const [manualCopy, setManualCopy] = useState('');
     const [codeDigits, setCodeDigits] = useState(emptyCode);
     const [origin, setOrigin] = useState(''), [allowPublic, setAllowPublic] = useState(false), [paired, setPaired] = useState(false);
+    const [pairingEnabled, setPairingEnabled] = useState(true), [pairingLoaded, setPairingLoaded] = useState(false), [pairingBusy, setPairingBusy] = useState(false);
+    const pairingEnabledRef = useRef(true);
+    const [clock, setClock] = useState(() => Date.now());
     const [view, setView] = useState<PairingView>('closed');
     const previousView = useRef(view);
     const pairingNavigation = useRef<HTMLDivElement>(null);
@@ -44,6 +47,27 @@ export function ConnectionsPage({ token, gateway, pairingSession, t, onChange, o
         const target = pairingSuccess.current ?? codeEntry.current?.querySelector('input') ?? navigation?.querySelector<HTMLButtonElement>('button:not(:disabled)') ?? navigation;
         target?.focus();
     }, [view, paired]);
+    useEffect(() => {
+        const signal = controller.current.signal;
+        void api<{ enabled: boolean }>(token, 'pairings', signal).then(status => {
+            if (!signal.aborted) {
+                pairingEnabledRef.current = status.enabled;
+                setPairingEnabled(status.enabled);
+                setPairingLoaded(true);
+            }
+        }).catch(error => {
+            if (!signal.aborted && error instanceof ApiError && error.status === 401) onAuthenticationError(error);
+            if (!signal.aborted) setPairingLoaded(true);
+        });
+    }, [token]);
+    useEffect(() => () => {
+        if (pairingSession.invite) void api(token, 'pairings/revoke', undefined, {});
+    }, [token, pairingSession]);
+    useEffect(() => {
+        if (view !== 'share' || !invite) return;
+        const timer = setInterval(() => setClock(Date.now()), 1000);
+        return () => clearInterval(timer);
+    }, [view, invite?.expiresAt]);
     function updateInvite(invite: PairingInvite | null) {
         pairingSession.invite = invite;
         setCreated(invite);
@@ -112,24 +136,53 @@ export function ConnectionsPage({ token, gateway, pairingSession, t, onChange, o
         else if (show) setPairingError(t('pairingFailed') + ': ' + failure.message);
     }
     async function createLink(signal: AbortSignal) {
-        if (busy) return;
+        if (busy || !pairingLoaded || !pairingEnabledRef.current) return;
         setBusy('pair'); setPairingError(''); updateInvite(null);
         try {
             const reply = await api<{ code: string; link: string; expires_in?: number }>(token, 'pairings', signal, {});
             if (signal.aborted) return;
-            updateInvite({ code: reply.code, link: reply.link, expiresAt: Date.now() + (reply.expires_in ?? 600) * 1000 });
+            updateInvite({ code: reply.code, link: reply.link, expiresAt: Date.now() + (reply.expires_in ?? 300) * 1000 });
         } catch (e) { if (!signal.aborted) pairingFail(e, previousView.current === 'share'); }
         finally { if (!signal.aborted) setBusy(null); }
     }
-    useEffect(() => {
-        if (view !== 'share' || pairingError || busy) return;
-        if (!created || created.expiresAt <= Date.now()) {
-            void createLink(controller.current.signal);
-            return;
+    async function changePairingEnabled(enabled: boolean) {
+        if (pairingBusy || busy) return;
+        setPairingBusy(true); setPairingError('');
+        try {
+            await api(token, 'pairings/settings', controller.current.signal, { enabled });
+            if (controller.current.signal.aborted) return;
+            pairingEnabledRef.current = enabled;
+            setPairingEnabled(enabled);
+            if (!enabled) updateInvite(null);
+        } catch (error) {
+            if (!controller.current.signal.aborted) pairingFail(error);
+        } finally {
+            if (!controller.current.signal.aborted) setPairingBusy(false);
         }
-        const timer = setTimeout(() => void createLink(controller.current.signal), Math.max(0, created.expiresAt - Date.now()));
+    }
+    async function closeShare() {
+        if (busy || pairingBusy) return;
+        try {
+            await api(token, 'pairings/revoke', controller.current.signal, {});
+        } catch (error) {
+            if (!controller.current.signal.aborted) pairingFail(error);
+        }
+        updateInvite(null);
+        setView('closed');
+    }
+    useEffect(() => {
+        if (view !== 'share' || pairingError || busy || !created || !pairingEnabled) return;
+        const timer = setTimeout(() => {
+            updateInvite(null);
+            setPairingError(t('pairingExpired'));
+        }, Math.max(0, created.expiresAt - Date.now()));
         return () => clearTimeout(timer);
-    }, [view, created, pairingError, busy]);
+    }, [view, created, pairingError, busy, pairingEnabled, pairingLoaded]);
+    useEffect(() => {
+        if (view === 'share' && !created && !pairingError && !busy && pairingEnabled) {
+            void createLink(controller.current.signal);
+        }
+    }, [view, created, pairingError, busy, pairingEnabled]);
     function focusCode(index: number) {
         codeEntry.current?.querySelectorAll('input')[Math.min(Math.max(index, 0), codeLength - 1)]?.focus();
     }
@@ -218,6 +271,8 @@ export function ConnectionsPage({ token, gateway, pairingSession, t, onChange, o
         setView('join');
     }
     const pairingAlert = pairingError && <div role="alert"><Text>{pairingError}</Text></div>;
+    const remainingSeconds = invite ? Math.max(0, Math.ceil((invite.expiresAt - clock) / 1000)) : 0;
+    const remainingLabel = `${Math.floor(remainingSeconds / 60)}:${String(remainingSeconds % 60).padStart(2, '0')}`;
     return <Stack gap={5}>
         <div className="connections-grid">
             <Card><Stack gap={3}><Text as="h2" font="heading" size="title" weight="medium">{gateway}</Text><Text tone="secondary">{t('connectionOnline')}</Text></Stack></Card>
@@ -246,11 +301,13 @@ export function ConnectionsPage({ token, gateway, pairingSession, t, onChange, o
             </div> : <Card>
                 {view === 'share' ? <Stack gap={4}>
                     <div ref={pairingNavigation} tabIndex={-1}>
-                        <Button variant="simple" onPress={() => setView('closed')}>{t('back')}</Button>
+                        <Button variant="simple" disabled={!!busy || pairingBusy} onPress={() => void closeShare()}>{t('back')}</Button>
                     </div>
+                    <Switch id="pairing-enabled" label={t('pairingAllow')} checked={pairingEnabled} disabled={!pairingLoaded || pairingBusy || !!busy} onCheckedChange={value => void changePairingEnabled(value)} />
+                    {!pairingEnabled && <div role="status"><Text>{t('pairingDisabled')}</Text></div>}
                     <div key={invite?.code} className="pairing-code-grid pairing-code-display" role="group" aria-label={t('pairingCode')}>
                         {emptyCode().map((_, index) => <input key={index} className="pairing-code-field"
-                            aria-label={`${t('pairingCode')} ${index + 1}`} readOnly value={invite?.code[index] ?? ''}
+                            aria-label={`${t('pairingCode')} ${index + 1}`} autoComplete="off" data-1p-ignore="true" data-lpignore="true" readOnly value={invite?.code[index] ?? ''}
                             disabled={!invite}
                             onFocus={event => event.currentTarget.select()}
                             onCopy={event => {
@@ -259,6 +316,7 @@ export function ConnectionsPage({ token, gateway, pairingSession, t, onChange, o
                                 event.clipboardData.setData('text/plain', invite.code);
                             }} />)}
                     </div>
+                    {invite && <div role="status"><Text tone="secondary">{t('pairingExpires')} {remainingLabel}</Text></div>}
                     {!invite && !pairingError && <div role="status"><Text>{t('connectingShort')}</Text></div>}
                     {pairingAlert}
                     <div className="pairing-share-actions">
@@ -281,8 +339,7 @@ export function ConnectionsPage({ token, gateway, pairingSession, t, onChange, o
                     <Text as="h2" font="heading" size="title" weight="medium">{t('addOtherInstance')}</Text>
                     <div ref={codeEntry} className="pairing-code-grid" role="group" aria-label={t('pairingCode')}>
                         {codeDigits.map((digit, index) => <input key={index} className="pairing-code-field"
-                            aria-label={`${t('pairingCode')} ${index + 1}`} inputMode="numeric"
-                            autoComplete={index === 0 ? 'one-time-code' : 'off'} disabled={busy === 'accept'} value={digit}
+                            aria-label={`${t('pairingCode')} ${index + 1}`} autoComplete="off" autoCapitalize="characters" data-1p-ignore="true" data-lpignore="true" inputMode="text" disabled={busy === 'accept'} value={digit}
                             onFocus={event => event.currentTarget.select()}
                             onChange={event => writeCode(event.currentTarget.value, index)}
                             onPaste={event => pasteCode(event, index)}

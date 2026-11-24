@@ -64,8 +64,10 @@ yonix web          # open the browser panel
 yonix token        # print the local API token
 ```
 
-The browser panel listens on `http://127.0.0.1:9847` by default. Open that URL
-and sign in with `yonix token`. For remote access, use an SSH tunnel:
+The standalone daemon listens on `http://127.0.0.1:9847` by default. The NixOS
+module enables LAN access on TCP/UDP 9847 by default so pairing discovery works
+between hosts. Open the local URL and sign in with `yonix token`. For remote
+access to a standalone daemon, use an SSH tunnel:
 
 ```console
 ssh -N -L 9847:127.0.0.1:9847 user@server
