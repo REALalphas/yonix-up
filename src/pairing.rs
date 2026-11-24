@@ -1,4 +1,4 @@
-//! Short invitations carry a packed socket address and a six-digit PIN. Legacy links carry a JSON path list.
+//! Short invitations carry a packed socket address and a six-character code. Legacy links carry a JSON path list.
 
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
@@ -187,22 +187,28 @@ pub fn parse_link(text: &str) -> Result<PairLink> {
     }
 }
 
-/// A short pairing code: exactly 6 ASCII digits, easy to read aloud or type.
+/// A short pairing code: six Crockford-base32 characters, easy to read aloud
+/// or type. Ambiguous letters are omitted while digits are retained so old
+/// numeric invitations remain valid during upgrades.
 pub fn validate_code(code: &str) -> Result<()> {
     normalize_code(code).map(|_| ())
 }
 
 /// Normalize human-entered pairing codes. Separators and whitespace are
-/// ignored so codes copied as `123-456`, `123 456`, or split across fields
-/// remain interoperable while the wire format stays six ASCII digits.
+/// ignored so codes copied as `AB3-K9Q`, `AB3 K9Q`, or split across fields
+/// remain interoperable while the wire format stays six uppercase characters.
 pub fn normalize_code(code: &str) -> Result<String> {
     let normalized: String = code
         .bytes()
         .filter(|byte| !byte.is_ascii_whitespace() && *byte != b'-')
-        .map(char::from)
+        .map(|byte| (byte as char).to_ascii_uppercase())
         .collect();
-    if normalized.len() != 6 || !normalized.bytes().all(|b| b.is_ascii_digit()) {
-        bail!("Pairing code must be 6 digits");
+    if normalized.len() != 6
+        || !normalized
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || b"ABCDEFGHJKMNPQRSTVWXYZ".contains(&byte))
+    {
+        bail!("Pairing code must be 6 characters (Crockford base32)");
     }
     Ok(normalized)
 }

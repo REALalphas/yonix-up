@@ -8,11 +8,11 @@ The selector applies to the web panel. CLI and the native GTK window continue to
 
 Open **Connections** in the sidebar (or the bottom navigation on a small screen). To pair two hosts:
 
-1. Open **Add connection** on either host. It shows six digits. **Copy code** copies all six, including leading zeros.
-2. On the other host, open **Add connection → Add another instance**, enter or paste the code, and choose **Accept and pair**. Both hosts save a connection. The code works once and rotates after ten minutes while the sharing screen is open.
+1. Open **Add connection** on either host. It shows six compact characters. **Copy code** copies all six as one value.
+2. On the other host, open **Add connection → Add another instance**, enter or paste the code, and choose **Accept and pair**. Both hosts save a connection. The code works once and expires after five minutes. The sharing screen shows the remaining time.
 3. For a routed network or IPv6, copy the full invitation from **Advanced** and paste it into the code fields on the other host. The invitation carries the address and port. Both daemons need a reachable return path.
 
-Code-only discovery uses IPv4 multicast on the same trusted LAN (UDP 9847). Each daemon also needs its configured TCP port open. The NixOS option `openFirewall` opens both ports. A loopback-only daemon can pair with another instance on the same machine. Across machines, configure a private listen address or a wildcard on both. The new pairing handshake uses SPAKE2 and ChaCha20-Poly1305 to protect the credential exchange. Subsequent management requests still use HTTP over the trusted LAN, VPN or tunnel.
+Code-only discovery uses IPv4 multicast on the same trusted LAN (UDP 9847). Each daemon also needs its configured TCP port open. The NixOS module opens both ports and binds the daemon to all IPv4 interfaces by default. A loopback-only daemon can pair with another instance on the same machine. The new pairing handshake uses SPAKE2 and ChaCha20-Poly1305 to protect the credential exchange. Subsequent management requests still use HTTP over the trusted LAN, VPN or tunnel.
 
 The paired host immediately appears in **Managed host**. Panel-created connections and their credentials are saved in `connections.json` inside the private state directory (`/var/lib/yonix` with the NixOS module), with mode `0600`. This runtime state survives package rebuilds and daemon restarts; treat its backups as secrets.
 

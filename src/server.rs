@@ -130,7 +130,9 @@ pub fn router(engine: Engine, token: String) -> Router {
         lan: Arc::default(),
     };
     Router::new()
-        .route("/api/pairings", post(mint_pairing))
+        .route("/api/pairings", get(pairing_status).post(mint_pairing))
+        .route("/api/pairings/settings", post(update_pairing))
+        .route("/api/pairings/revoke", post(revoke_pairing))
         .route("/api/pairings/hello", post(lan::hello))
         .route("/api/pairings/finish", post(lan::finish))
         .route("/api/pairings/redeem", post(redeem_pairing))
@@ -465,6 +467,37 @@ async fn mint_pairing(
     ))
 }
 
+async fn pairing_status(State(app): State<App>) -> Json<serde_json::Value> {
+    Json(serde_json::json!({
+        "enabled": app.engine.connections.pairing_enabled(),
+        "active": app.engine.connections.current_invite().is_some(),
+    }))
+}
+
+#[derive(Deserialize)]
+struct PairingSettingsRequest {
+    enabled: bool,
+}
+
+async fn update_pairing(
+    State(app): State<App>,
+    Json(body): Json<PairingSettingsRequest>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    app.engine
+        .connections
+        .set_pairing_enabled(body.enabled)
+        .map_err(|e| error(StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    Ok(Json(serde_json::json!({ "enabled": body.enabled })))
+}
+
+async fn revoke_pairing(State(app): State<App>) -> Result<Json<serde_json::Value>, ApiError> {
+    app.engine
+        .connections
+        .revoke_pairing()
+        .map_err(|e| error(StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    Ok(Json(serde_json::json!({ "revoked": true })))
+}
+
 #[derive(Deserialize, Serialize)]
 struct RedeemRequest {
     code: String,
@@ -594,7 +627,7 @@ async fn accept_pairing(
         }
     }
     // Only unversioned, explicitly shared invitations from the old release
-    // use its legacy HTTP exchange. All new routes require a PIN proof.
+    // use its legacy HTTP exchange. All new routes require a pairing-code proof.
     if body.link.trim().starts_with(['~', '!']) || parsed.payload.paths.is_empty() {
         let mut candidates = Vec::new();
         for (url, role) in &paths {

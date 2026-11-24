@@ -126,5 +126,9 @@
     "addConnectionHelp": "分享六位验证码以配对另一台 Yonix 实例",
     "addOtherInstance": "Add another instance",
     "back": "Back",
-    "advanced": "Advanced"
+    "advanced": "Advanced",
+    "pairingAllow": "Allow pairing",
+    "pairingDisabled": "Pairing is disabled",
+    "pairingExpires": "Code expires in",
+    "pairingExpired": "This pairing code expired. Start a new invitation."
 }

@@ -115,7 +115,7 @@
     "pairingFailed": "Could not pair",
     "pairingPasteLink": "Paste a pairing link here",
     "pairingCode": "Code",
-    "pairingCodePlaceholder": "6 digits",
+    "pairingCodePlaceholder": "6 characters",
     "testConnection": "Test connection",
     "statusChecking": "Checking",
     "statusBuilding": "Building",
@@ -123,8 +123,12 @@
     "statusRollingBack": "Rolling back",
     "statusCleaning": "Cleaning",
     "addConnection": "Add connection",
-    "addConnectionHelp": "Share a six-digit code to pair with another Yonix instance",
+    "addConnectionHelp": "Share a six-character code to pair with another Yonix instance",
     "addOtherInstance": "Add another instance",
     "back": "Back",
-    "advanced": "Advanced"
+    "advanced": "Advanced",
+    "pairingAllow": "Allow pairing",
+    "pairingDisabled": "Pairing is disabled",
+    "pairingExpires": "Code expires in",
+    "pairingExpired": "This pairing code expired. Start a new invitation."
 }

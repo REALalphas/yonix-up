@@ -255,7 +255,10 @@ fn pairing_links_exchange_tokens_burn_codes_and_reject_replay() {
         .unwrap();
     let code = mint["code"].as_str().unwrap();
     assert_eq!(code.len(), 6);
-    assert!(code.bytes().all(|b| b.is_ascii_digit()));
+    assert!(
+        code.bytes()
+            .all(|b| b.is_ascii_digit() || b"ABCDEFGHJKMNPQRSTVWXYZ".contains(&b))
+    );
     assert!(!mint.to_string().contains(&initiator_token));
     // Server-side pairing state is a private file next to connections.json.
     assert_eq!(
@@ -315,7 +318,7 @@ fn pairing_links_exchange_tokens_burn_codes_and_reject_replay() {
     // Replay fails: the code burned on first use.
     assert_eq!(redeem(joiner_body).status(), 401);
     // Bad codes and payloads are rejected with 400/401, never 500.
-    for bad in ["zz", "12345", "1234567", "abcdef"] {
+    for bad in ["zz", "12345", "1234567", "I23456"] {
         assert_eq!(
             redeem(
                 json!({"code": bad, "host": "web", "token": joiner_token, "url": joiner.base_url()})
@@ -495,7 +498,7 @@ fn browser_connections_are_verified_private_persistent_and_removable() {
 }
 
 #[test]
-fn six_digits_or_compact_invitation_pair_both_daemons() {
+fn six_character_or_compact_invitation_pair_both_daemons() {
     for use_code in [true, false] {
         let root = tempfile::tempdir().unwrap();
         let share = config(root.path(), "sender");
@@ -628,11 +631,34 @@ fn expired_pairing_invites_are_removed_before_a_new_one_is_minted() {
     let loaded: Value = serde_json::from_slice(&fs::read(&journal).unwrap()).unwrap();
     assert_eq!(loaded, json!([]));
     let (code, expires_in) = store.mint_pairing().unwrap();
-    assert_eq!(expires_in, 600);
+    assert_eq!(expires_in, 300);
 
     let pending: Value = serde_json::from_slice(&fs::read(&journal).unwrap()).unwrap();
     let entries = pending.as_array().unwrap();
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0]["code"], code);
     assert_ne!(entries[0]["invite_id"], "expired-invite");
+}
+
+#[test]
+fn pairing_can_be_disabled_and_persists_across_restart() {
+    let root = tempfile::tempdir().unwrap();
+    let cfg = config(root.path(), "sender");
+    fs::create_dir_all(&cfg.state_dir).unwrap();
+    let store = yonix::peers::Connections::open(&cfg).unwrap();
+    assert!(store.pairing_enabled());
+    store.set_pairing_enabled(false).unwrap();
+    assert!(!store.pairing_enabled());
+    assert!(store.mint_pairing().is_err());
+
+    let reopened = yonix::peers::Connections::open(&cfg).unwrap();
+    assert!(!reopened.pairing_enabled());
+    reopened.set_pairing_enabled(true).unwrap();
+    let (code, expires_in) = reopened.mint_pairing().unwrap();
+    assert_eq!(code.len(), 6);
+    assert_eq!(expires_in, 300);
+    reopened.revoke_pairing().unwrap();
+    let pending: Value =
+        serde_json::from_slice(&fs::read(cfg.state_dir.join("pairings.json")).unwrap()).unwrap();
+    assert_eq!(pending, json!([]));
 }

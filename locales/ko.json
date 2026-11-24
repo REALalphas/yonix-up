@@ -126,5 +126,9 @@
     "addConnectionHelp": "다른 Yonix 인스턴스와 페어링하려면 6자리 코드를 공유하세요",
     "addOtherInstance": "Add another instance",
     "back": "Back",
-    "advanced": "Advanced"
+    "advanced": "Advanced",
+    "pairingAllow": "Allow pairing",
+    "pairingDisabled": "Pairing is disabled",
+    "pairingExpires": "Code expires in",
+    "pairingExpired": "This pairing code expired. Start a new invitation."
 }

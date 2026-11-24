@@ -139,6 +139,13 @@ fn is_false(value: &bool) -> bool {
     !value
 }
 
+const PAIRING_TTL_SECONDS: u64 = 300;
+
+#[derive(Clone, Deserialize, Serialize)]
+struct PairingSettings {
+    enabled: bool,
+}
+
 /// One outstanding pairing code minted by `POST /api/pairings`. The code is
 /// separate from the login token: it authorizes a single redeem that swaps
 /// freshly read login tokens, then burns itself.
@@ -156,7 +163,9 @@ pub struct Connections {
     declared: Vec<Peer>,
     saved: std::sync::Mutex<Vec<SavedConnection>>,
     pending: std::sync::Mutex<Vec<PendingPairing>>,
+    pairing_enabled: std::sync::Mutex<bool>,
     pairings_file: PathBuf,
+    pairing_settings_file: PathBuf,
     file: PathBuf,
     local_url: String,
     token_path: PathBuf,
@@ -211,16 +220,30 @@ impl Connections {
         } else {
             Vec::new()
         };
+        let pairing_settings_file = config.state_dir.join("pairing-settings.json");
+        let pairing_enabled = if pairing_settings_file.exists() {
+            let metadata = std::fs::metadata(&pairing_settings_file)?;
+            if !metadata.is_file() || metadata.permissions().mode() & 0o077 != 0 {
+                bail!("Pairing settings must be a private file");
+            }
+            serde_json::from_slice::<PairingSettings>(&std::fs::read(&pairing_settings_file)?)?
+                .enabled
+        } else {
+            true
+        };
         let store = Self {
             declared: config.peers.clone(),
             saved: std::sync::Mutex::new(saved),
             pending: std::sync::Mutex::new(pending),
+            pairing_enabled: std::sync::Mutex::new(pairing_enabled),
             pairings_file,
+            pairing_settings_file,
             file,
             local_url: config.base_url(),
             token_path: config.token_path(),
         };
         store.save_pending(&store.pending.lock().unwrap())?;
+        store.save_pairing_settings(pairing_enabled)?;
         let entries = store.saved.lock().unwrap();
         let mut ids = std::collections::HashSet::new();
         for entry in entries.iter() {
@@ -292,19 +315,20 @@ impl Connections {
         entries
     }
 
-    /// Pairing codes live 10 minutes, burn on first successful redeem and
+    /// Pairing codes live five minutes, burn on first successful redeem and
     /// never return the login token.
     pub fn mint_pairing(&self) -> Result<(String, u64)> {
+        if !self.pairing_enabled() {
+            bail!("Pairing is disabled");
+        }
         let mut pending = self.pending.lock().unwrap();
         let now = now_secs();
-        if let Some(current) = pending
-            .iter()
-            .rev()
-            .find(|entry| entry.invite_id.is_some() && now.saturating_sub(entry.created) < 600)
-        {
+        if let Some(current) = pending.iter().rev().find(|entry| {
+            entry.invite_id.is_some() && now.saturating_sub(entry.created) < PAIRING_TTL_SECONDS
+        }) {
             return Ok((
                 current.code.clone(),
-                600 - now.saturating_sub(current.created),
+                PAIRING_TTL_SECONDS - now.saturating_sub(current.created),
             ));
         }
         let mut code = random_code()?;
@@ -324,10 +348,37 @@ impl Connections {
         });
         self.save_pending(&next)?;
         *pending = next;
-        Ok((code, 600))
+        Ok((code, PAIRING_TTL_SECONDS))
+    }
+
+    pub fn pairing_enabled(&self) -> bool {
+        *self.pairing_enabled.lock().unwrap()
+    }
+
+    pub fn set_pairing_enabled(&self, enabled: bool) -> Result<()> {
+        let mut setting = self.pairing_enabled.lock().unwrap();
+        if !enabled {
+            let mut pending = self.pending.lock().unwrap();
+            pending.clear();
+            self.save_pending(&pending)?;
+        }
+        if *setting != enabled {
+            self.save_pairing_settings(enabled)?;
+        }
+        *setting = enabled;
+        Ok(())
+    }
+
+    pub fn revoke_pairing(&self) -> Result<()> {
+        let mut pending = self.pending.lock().unwrap();
+        pending.clear();
+        self.save_pending(&pending)
     }
 
     pub(crate) fn current_invite(&self) -> Option<(String, String)> {
+        if !self.pairing_enabled() {
+            return None;
+        }
         self.pending
             .lock()
             .unwrap()
@@ -348,6 +399,9 @@ impl Connections {
         invite_id: Option<&str>,
         input: ConnectionInput,
     ) -> Result<bool> {
+        if !self.pairing_enabled() {
+            return Ok(false);
+        }
         let mut pending = self.pending.lock().unwrap();
         let Some(index) = pending.iter().position(|entry| {
             !pairing_code_expired(entry.created)
@@ -502,6 +556,10 @@ impl Connections {
     fn save_pending(&self, entries: &[PendingPairing]) -> Result<()> {
         write_private_json(&self.pairings_file, entries)
     }
+
+    fn save_pairing_settings(&self, enabled: bool) -> Result<()> {
+        write_private_json(&self.pairing_settings_file, &PairingSettings { enabled })
+    }
 }
 
 fn write_private_json(path: &PathBuf, value: &(impl serde::Serialize + ?Sized)) -> Result<()> {
@@ -531,26 +589,27 @@ fn now_secs() -> u64 {
         .as_secs()
 }
 
-/// Pairing codes are one-time and short-lived: 10 minutes from minting.
+/// Pairing codes are one-time and short-lived: five minutes from minting.
 /// Expiry is checked on load, on mint and on redeem; spent codes are dropped
 /// immediately so a captured code cannot be replayed later.
 fn pairing_code_expired(created: u64) -> bool {
-    now_secs().saturating_sub(created) >= 600
+    now_secs().saturating_sub(created) >= PAIRING_TTL_SECONDS
 }
 
 fn random_code() -> Result<String> {
-    // Six decimal digits from rejection-sampled /dev/urandom bytes so every
-    // 000000..=999999 value is equally likely.
+    // Six Crockford-base32 characters from rejection-sampled /dev/urandom
+    // bytes. I, L, O and U are omitted to make codes easier to read aloud.
     use std::io::Read;
+    const ALPHABET: &[u8] = b"0123456789ABCDEFGHJKMNPQRSTVWXYZ";
     let mut digits = String::with_capacity(6);
     let mut byte = [0u8; 1];
     let mut random = std::fs::File::open("/dev/urandom")?;
     while digits.len() < 6 {
         random.read_exact(&mut byte)?;
-        // 250 is the largest multiple of 10 below 256: values above it are
-        // discarded to keep the digit distribution uniform.
-        if byte[0] < 250 {
-            digits.push((b'0' + byte[0] % 10) as char);
+        // 224 is the largest multiple of 32 below 256: values above it are
+        // discarded to keep every character equally likely.
+        if byte[0] < 224 {
+            digits.push(ALPHABET[(byte[0] % 32) as usize] as char);
         }
     }
     Ok(digits)

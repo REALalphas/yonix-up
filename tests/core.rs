@@ -537,7 +537,7 @@ fn pairing_rejects_bad_links_codes_and_paths() {
         }],
     };
     // Bad codes.
-    for bad in ["", "xyz", "12345", "1234567", "abcdef", "12 345"] {
+    for bad in ["", "xyz", "12345", "1234567", "I23456", "12 345"] {
         assert!(parse_link(bad).is_err(), "{bad}");
         assert!(yonix::pairing::encode_link(&payload, bad).is_err(), "{bad}");
     }

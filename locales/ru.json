@@ -115,7 +115,7 @@
     "pairingFailed": "Не удалось подключить хост",
     "pairingPasteLink": "Вставьте ссылку подключения сюда",
     "pairingCode": "Код",
-    "pairingCodePlaceholder": "6 цифр",
+    "pairingCodePlaceholder": "6 символов",
     "testConnection": "Проверить подключение",
     "statusChecking": "Проверка",
     "statusBuilding": "Сборка",
@@ -123,8 +123,12 @@
     "statusRollingBack": "Откат",
     "statusCleaning": "Очистка",
     "addConnection": "Добавить подключение",
-    "addConnectionHelp": "Поделитесь шестизначным кодом, чтобы подключить другой экземпляр Yonix",
+    "addConnectionHelp": "Поделитесь коротким кодом из 6 символов, чтобы подключить другой экземпляр Yonix",
     "addOtherInstance": "Добавить другой инстанс",
     "back": "Назад",
-    "advanced": "Дополнительно"
+    "advanced": "Дополнительно",
+    "pairingAllow": "Разрешить сопряжение",
+    "pairingDisabled": "Сопряжение отключено",
+    "pairingExpires": "Код действует ещё",
+    "pairingExpired": "Срок действия кода истёк. Создайте новое приглашение."
 }

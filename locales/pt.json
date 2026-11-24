@@ -126,5 +126,9 @@
     "addConnectionHelp": "Compartilhe um código de seis dígitos para emparelhar outra instância do Yonix",
     "addOtherInstance": "Add another instance",
     "back": "Back",
-    "advanced": "Advanced"
+    "advanced": "Advanced",
+    "pairingAllow": "Allow pairing",
+    "pairingDisabled": "Pairing is disabled",
+    "pairingExpires": "Code expires in",
+    "pairingExpired": "This pairing code expired. Start a new invitation."
 }
