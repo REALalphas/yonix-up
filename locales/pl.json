@@ -67,6 +67,7 @@
     "envLegacy": "Starsza (configuration.nix)",
     "envLegacyShort": "Starsza",
     "missingConfiguration": "Nie znaleziono flake.nix ani configuration.nix",
+    "configurationInaccessible": "Yonix nie ma dostępu do konfiguracji",
     "checkingSafe": "Sprawdzanie i budowanie nie zmieniają działającego systemu.",
     "maintenance": "Konserwacja",
     "fullLogs": "Ostatnie 128 KiB · pełne dzienniki są zapisywane na hoście",

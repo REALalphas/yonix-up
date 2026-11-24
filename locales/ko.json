@@ -67,6 +67,7 @@
     "envLegacy": "레거시 (configuration.nix)",
     "envLegacyShort": "레거시",
     "missingConfiguration": "flake.nix 또는 configuration.nix을 찾을 수 없음",
+    "configurationInaccessible": "Yonix가 구성에 액세스할 수 없습니다",
     "checkingSafe": "확인과 빌드는 실행 중인 시스템을 변경하지 않습니다.",
     "maintenance": "유지 관리",
     "fullLogs": "마지막 128 KiB · 전체 로그는 호스트에 저장됩니다",

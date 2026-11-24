@@ -67,6 +67,7 @@
     "envLegacy": "Legacy (configuration.nix)",
     "envLegacyShort": "Legacy",
     "missingConfiguration": "Weder flake.nix noch configuration.nix gefunden",
+    "configurationInaccessible": "Yonix kann auf die Konfiguration nicht zugreifen",
     "checkingSafe": "Prüfen und Erstellen ändern das laufende System nicht.",
     "maintenance": "Wartung",
     "fullLogs": "Letzte 128 KiB · vollständige Protokolle werden auf dem Host gespeichert",

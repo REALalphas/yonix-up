@@ -17,6 +17,7 @@ export interface Status {
     system_changes_enabled: boolean;
     /** Environment type. Older (flake-only) peers omit it; treat as flake. */
     config_kind?: ConfigKind;
+    config_error?: string;
     cache?: {url:string;public_key:string|null}|null;
 }
 export const actionKeys: Record<Action, string> = { check: 'actionCheck', build: 'actionBuild', diff: 'actionDiff', switch: 'actionSwitch', 'update-inputs': 'actionUpdate', rollback: 'actionRollback', clean: 'actionClean' };
@@ -49,7 +50,14 @@ export function resolveHostStatus(status: Status | null, error: boolean | Error 
     }
     return null;
 }
-export function allowed(action: Action, status: Status | null, pending: boolean) { return !!status && !status.active && !pending && (status.system_changes_enabled || !['switch', 'rollback', 'clean'].includes(action)) && (action !== 'update-inputs' || (status.config_kind ?? 'flake') === 'flake'); }
+export function allowed(action: Action, status: Status | null, pending: boolean) {
+    if (!status || status.active || pending) return false;
+    if (action === 'rollback' || action === 'clean') return status.system_changes_enabled;
+    const kind = status.config_kind ?? 'flake';
+    if (kind === 'unknown') return false;
+    if (action === 'switch') return status.system_changes_enabled;
+    return action !== 'update-inputs' || kind === 'flake';
+}
 export class ApiError extends Error {
     constructor(public readonly status: number, message: string) {
         super(message);

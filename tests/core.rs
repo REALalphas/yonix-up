@@ -262,9 +262,9 @@ fn legacy_fixture() -> (tempfile::TempDir, Config) {
 #[test]
 fn detects_flake_legacy_and_unknown_environments() {
     let (_dir, flake) = fixture();
-    assert_eq!(flake.config_kind(), ConfigKind::Flake);
+    assert_eq!(flake.config_kind().unwrap(), ConfigKind::Flake);
     let (_dir, legacy) = legacy_fixture();
-    assert_eq!(legacy.config_kind(), ConfigKind::Legacy);
+    assert_eq!(legacy.config_kind().unwrap(), ConfigKind::Legacy);
     let dir = tempfile::tempdir().unwrap();
     let empty = Config {
         config_path: dir.path().into(),
@@ -272,13 +272,13 @@ fn detects_flake_legacy_and_unknown_environments() {
         host: "nas".into(),
         ..Config::default()
     };
-    assert_eq!(empty.config_kind(), ConfigKind::Unknown);
+    assert_eq!(empty.config_kind().unwrap(), ConfigKind::Unknown);
     // A present flake.nix wins when both files exist.
     fs::write(legacy.config_path.join("flake.nix"), "{}").unwrap();
-    assert_eq!(legacy.config_kind(), ConfigKind::Flake);
+    assert_eq!(legacy.config_kind().unwrap(), ConfigKind::Flake);
     // Detection is runtime: missing files on an existing path read as unknown.
     fs::remove_file(flake.config_path.join("flake.nix")).unwrap();
-    assert_eq!(flake.config_kind(), ConfigKind::Unknown);
+    assert_eq!(flake.config_kind().unwrap(), ConfigKind::Unknown);
 }
 
 #[test]

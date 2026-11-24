@@ -67,6 +67,7 @@
     "envLegacy": "Застаріла (configuration.nix)",
     "envLegacyShort": "Застаріла",
     "missingConfiguration": "Не знайдено flake.nix ані configuration.nix",
+    "configurationInaccessible": "Yonix не має доступу до конфігурації",
     "checkingSafe": "Перевірка та збирання не змінюють запущену систему.",
     "maintenance": "Обслуговування",
     "fullLogs": "Останні 128 КіБ · повні журнали зберігаються на хості",

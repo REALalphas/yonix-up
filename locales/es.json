@@ -67,6 +67,7 @@
     "envLegacy": "Heredado (configuration.nix)",
     "envLegacyShort": "Heredado",
     "missingConfiguration": "No se encontró flake.nix ni configuration.nix",
+    "configurationInaccessible": "Yonix no puede acceder a la configuración",
     "checkingSafe": "Comprobar y construir no cambian el sistema en ejecución.",
     "maintenance": "Mantenimiento",
     "fullLogs": "Últimos 128 KiB · los registros completos se guardan en el equipo anfitrión",

@@ -58,12 +58,10 @@ pkgs.testers.runNixOSTest {
   };
   testScript = ''
     import json
+    import shlex
     start_all()
     machine.wait_for_unit("yonix.service")
     machine.wait_for_open_port(9847)
-    # Normal-user homes are private by default. Grant the daemon traversal to
-    # this fixture's parent directory before using a checkout below it.
-    machine.succeed("setfacl -m g:yonix:--x /home/operator")
     machine.succeed("install -d -m 0700 -o operator -g users /home/operator/nixos")
     machine.succeed("install -m 0600 -o operator -g users /etc/yonix-test-flake.nix /home/operator/nixos/flake.nix")
     # Reproduce the original yonix checkout: the flake imports a Git-ignored config.nix.
@@ -74,8 +72,56 @@ pkgs.testers.runNixOSTest {
     # The checkout is created after boot, so apply the module's ACL rule now.
     machine.succeed("systemd-tmpfiles --create --prefix=/home/operator/nixos")
     status = json.loads(machine.succeed("su - operator -c 'yonix status'"))
+    assert status["config_kind"] == "unknown", status
+    assert "Permission denied" in status["config_error"], status
+    assert "Permission denied" in machine.fail("su - operator -c 'yonix update-inputs --yes' 2>&1"), status
+    assert json.loads(machine.succeed("su - operator -c 'yonix history'")) == []
+    # Grant only directory search on the private home.
+    machine.succeed("setfacl -m u:yonix:--x /home/operator")
+    status = json.loads(machine.succeed("su - operator -c 'yonix status'"))
     assert status["host"] == "test"
+    assert status["config_kind"] == "flake" and "config_error" not in status, status
     assert status["system_changes_enabled"]
+    settings = json.loads(machine.succeed("cat /etc/yonix/config.json"))
+    helper = shlex.quote(settings["privileged_helper"])
+    machine.succeed("runuser -u yonix -- sudo -n -l -- " + helper + " switch")
+    machine.fail("runuser -u yonix -- sudo -n id")
+    # Simulate a running old-account daemon re-execing the new launcher after
+    # activation has updated the unit. Restart must pick up the new credentials.
+    fixture = "/run/yonix-upgrade-test"
+    unit = "yonix-upgrade-test.service"
+    def write_fixture(path, contents):
+        machine.succeed("printf %s " + shlex.quote(contents) + " > " + path)
+
+    machine.succeed("mkdir -p " + fixture + " /run/systemd/system/" + unit + ".d")
+    upgrade_settings = dict(settings, port=9846, state_dir="/var/lib/yonix-upgrade-test")
+    write_fixture(fixture + "/config.json", json.dumps(upgrade_settings))
+    write_fixture(fixture + "/service-user", "operator\n")
+    write_fixture(fixture + "/start", f"""#!${pkgs.runtimeShell}
+    until [ -f {fixture}/exec ]; do ${pkgs.coreutils}/bin/sleep 0.1; done
+    exec /run/current-system/sw/bin/yonix --config {fixture}/config.json serve
+    """)
+    machine.succeed("chmod 755 " + fixture + "/start")
+    write_fixture("/run/systemd/system/" + unit, f"""[Service]
+    User=operator
+    StateDirectory=yonix-upgrade-test
+    Environment=PATH=/run/current-system/sw/bin
+    ExecStart={fixture}/start
+    Restart=on-failure
+    RestartSec=1
+    """)
+    machine.succeed("systemctl daemon-reload && systemctl start " + unit)
+    old_pid = machine.succeed("systemctl show -p MainPID --value " + unit).strip()
+    assert machine.succeed("ps -o user= -p " + old_pid).strip() == "operator"
+    write_fixture("/run/systemd/system/" + unit + ".d/user.conf", "[Service]\nUser=yonix\nGroup=yonix\n")
+    write_fixture(fixture + "/service-user", "yonix\n")
+    machine.succeed("systemctl daemon-reload && touch " + fixture + "/exec")
+    machine.wait_for_open_port(9846)
+    new_pid = machine.succeed("systemctl show -p MainPID --value " + unit).strip()
+    assert old_pid != new_pid and machine.succeed("ps -o user= -p " + new_pid).strip() == "yonix"
+    upgrade_log = machine.succeed("journalctl -u " + unit + " -o cat")
+    assert "running as operator after a service account change to yonix" in upgrade_log, upgrade_log
+    machine.succeed("systemctl stop " + unit)
     machine.succeed("test $(stat -c %a /var/lib/yonix/token) = 640")
     machine.fail("su - nobody -s /bin/sh -c 'cat /var/lib/yonix/token'")
     machine.succeed("test $(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:9847/api/status) = 401")
@@ -130,7 +176,7 @@ pkgs.testers.runNixOSTest {
     machine.succeed("printf '%s\\n' '{ }' > /home/operator/nixos/configuration.nix")
     machine.succeed("chown operator:users /home/operator/nixos/configuration.nix")
     # NixOS activation reapplies the home mode, masking the traversal ACL.
-    machine.succeed("setfacl -m g:yonix:--x /home/operator")
+    machine.succeed("setfacl -m u:yonix:--x /home/operator")
     machine.succeed("systemd-tmpfiles --create --prefix=/home/operator/nixos")
     status = json.loads(machine.succeed("su - operator -c 'yonix status'"))
     assert status["config_kind"] == "legacy", status

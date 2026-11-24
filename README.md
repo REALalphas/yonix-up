@@ -42,6 +42,24 @@ Members of the `yonix` group can use the daemon and edit the configured
 checkout. Use `allowSystemChanges = true` only for administrators. A changed
 NixOS configuration can execute code as root during activation.
 
+The module grants access within `configPath`. When it sits under a private
+directory, give the `yonix` service user search permission on each private
+parent so it can reach the checkout. An activation script ordered after
+`users` reapplies the ACL when NixOS resets the home directory mode. The
+example covers a checkout at `/home/alice/nixos`.
+
+```nix
+system.activationScripts.yonixConfigAccess = {
+  deps = [ "users" ];
+  text = ''
+    ${pkgs.acl}/bin/setfacl -m u:yonix:--x /home/alice
+  '';
+};
+```
+
+If an upgrade leaves the daemon running as your former operator account, run
+`sudo systemctl restart yonix.service` once the active operation has finished.
+
 Use `yonix-headless` on servers without GTK:
 
 ```nix
