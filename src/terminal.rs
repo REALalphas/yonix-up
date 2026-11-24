@@ -235,6 +235,9 @@ pub fn print_status(status: &Status, theme: &Theme) {
         label("Configuration:", theme),
         status.config_path.display()
     );
+    if let Some(error) = &status.config_error {
+        println!("  {}", theme.red(error));
+    }
 
     let sys_str = status
         .current_system

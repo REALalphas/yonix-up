@@ -67,6 +67,7 @@
     "envLegacy": "Eski (configuration.nix)",
     "envLegacyShort": "Eski",
     "missingConfiguration": "flake.nix veya configuration.nix bulunamadı",
+    "configurationInaccessible": "Yonix yapılandırmaya erişemiyor",
     "checkingSafe": "Denetleme ve oluşturma çalışan sistemi değiştirmez.",
     "maintenance": "Bakım",
     "fullLogs": "Son 128 KiB · tam günlükler ana makinede saklanır",

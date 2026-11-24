@@ -67,6 +67,7 @@
     "envLegacy": "Hérité (configuration.nix)",
     "envLegacyShort": "Hérité",
     "missingConfiguration": "Ni flake.nix ni configuration.nix trouvés",
+    "configurationInaccessible": "Yonix ne peut pas accéder à la configuration",
     "checkingSafe": "La vérification et la construction ne modifient pas le système en cours d’exécution.",
     "maintenance": "Maintenance",
     "fullLogs": "Derniers 128 Kio · les journaux complets sont enregistrés sur l’hôte",

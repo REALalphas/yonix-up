@@ -67,6 +67,7 @@
     "envLegacy": "レガシー (configuration.nix)",
     "envLegacyShort": "レガシー",
     "missingConfiguration": "flake.nix も configuration.nix も見つかりません",
+    "configurationInaccessible": "Yonix は設定にアクセスできません",
     "checkingSafe": "確認とビルドは、稼働中のシステムを変更しません。",
     "maintenance": "メンテナンス",
     "fullLogs": "末尾の 128 KiB · 完全なログはホストに保存されます",

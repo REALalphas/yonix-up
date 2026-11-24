@@ -1,8 +1,8 @@
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, bail, ensure};
 use clap::{Parser, Subcommand};
 use std::{
     io::{self, Write},
-    path::PathBuf,
+    path::{Path, PathBuf},
     time::Duration,
 };
 use yonix::{client::Client, config::Config, engine::Action, terminal::Theme};
@@ -327,6 +327,37 @@ fn operation(client: Client, action: Action, theme: &Theme) -> Result<()> {
     }
 }
 
+fn check_service_user(config_path: &Path) -> Result<()> {
+    let systemd_pid = std::env::var("SYSTEMD_EXEC_PID")
+        .ok()
+        .and_then(|pid| pid.parse().ok());
+    if systemd_pid != Some(std::process::id()) {
+        return Ok(());
+    }
+
+    // A self-update exec keeps its original credentials. Read the account
+    // from the activated generation so systemd can restart us with its User=.
+    let path = config_path.with_file_name("service-user");
+    let expected = match std::fs::read_to_string(&path) {
+        Ok(user) => user,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error).with_context(|| format!("Cannot read {}", path.display())),
+    };
+    let expected = expected.trim();
+    let identity = std::process::Command::new("id").arg("-un").output()?;
+    ensure!(
+        identity.status.success(),
+        "Cannot identify the Yonix service user"
+    );
+    let running = String::from_utf8_lossy(&identity.stdout);
+    let running = running.trim();
+    ensure!(
+        running == expected,
+        "Yonix is running as {running} after a service account change to {expected}. Restart yonix.service to apply the new credentials."
+    );
+    Ok(())
+}
+
 fn run() -> Result<()> {
     let args = Args::parse();
     let theme = Theme::detect(args.color.as_deref());
@@ -338,6 +369,7 @@ fn run() -> Result<()> {
     }
     let config = Config::load(&args.config)?;
     if matches!(command, Commands::Serve) {
+        check_service_user(&args.config)?;
         return tokio::runtime::Runtime::new()?.block_on(yonix::server::run(config));
     }
     if matches!(command, Commands::Token) {

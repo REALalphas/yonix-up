@@ -161,14 +161,22 @@ impl Config {
     /// Detect the environment type from the files in `config_path`.
     /// A present `flake.nix` wins when both files exist; `source_mode`
     /// only applies to the flake case and is ignored for legacy configs.
-    pub fn config_kind(&self) -> ConfigKind {
-        if self.config_path.join("flake.nix").is_file() {
-            ConfigKind::Flake
-        } else if self.config_path.join("configuration.nix").is_file() {
-            ConfigKind::Legacy
-        } else {
-            ConfigKind::Unknown
+    pub fn config_kind(&self) -> Result<ConfigKind> {
+        for (filename, kind) in [
+            ("flake.nix", ConfigKind::Flake),
+            ("configuration.nix", ConfigKind::Legacy),
+        ] {
+            let path = self.config_path.join(filename);
+            match fs::metadata(&path) {
+                Ok(metadata) if metadata.is_file() => return Ok(kind),
+                Ok(_) => continue,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+                Err(error) => {
+                    bail!("Cannot access {}: {error}", path.display());
+                }
+            }
         }
+        Ok(ConfigKind::Unknown)
     }
     pub fn flake_source(&self) -> String {
         format!(

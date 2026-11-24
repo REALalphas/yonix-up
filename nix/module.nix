@@ -111,7 +111,7 @@ in
     configPath = mkOption {
       type = types.strMatching "/.*";
       default = "/etc/nixos";
-      description = "Absolute path to a writable NixOS configuration: a flake checkout (flake.nix) or a legacy directory (configuration.nix). Flake mode takes precedence when both files are present. Keep it on a local filesystem.";
+      description = "Absolute path to a writable NixOS configuration: a flake checkout (flake.nix) or a legacy directory (configuration.nix). Flake mode takes precedence when both files are present. Keep it on a local filesystem and grant the yonix service user search permission on any private parent directories.";
     };
     sourceMode = mkOption {
       type = types.enum [
@@ -328,6 +328,7 @@ in
     networking.firewall.allowedUDPPorts = lib.optionals cfg.openFirewall [ 9847 ];
     networking.firewall.allowedTCPPorts = lib.optionals cfg.openFirewall [ cfg.port ];
     environment.etc."yonix/config.json".source = json.generate "yonix-config.json" settings;
+    environment.etc."yonix/service-user".text = config.systemd.services.yonix.serviceConfig.User;
     nix.settings.experimental-features = [
       "nix-command"
       "flakes"
@@ -372,8 +373,7 @@ in
     security.sudo.enable = mkIf cfg.allowSystemChanges true;
     security.sudo.extraRules = lib.optionals cfg.allowSystemChanges [
       {
-        # Self-reexec preserves the old daemon's credentials. Keep the legacy
-        # operator authorized until systemd starts it as yonix.
+        # Keep compatibility with older Yonix packages running as the legacy user.
         users = lib.unique ([ "yonix" ] ++ lib.optional (cfg.user != null) cfg.user);
         commands =
           map

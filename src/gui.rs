@@ -382,7 +382,12 @@ fn build_window(
                         match snapshot.status.config_kind {
                             crate::config::ConfigKind::Flake => lang.text("envFlake"),
                             crate::config::ConfigKind::Legacy => lang.text("envLegacy"),
-                            crate::config::ConfigKind::Unknown => lang.text("missingConfiguration"),
+                            crate::config::ConfigKind::Unknown =>
+                                lang.text(if snapshot.status.config_error.is_some() {
+                                    "configurationInaccessible"
+                                } else {
+                                    "missingConfiguration"
+                                }),
                         }
                     ));
                     source.set_subtitle(&snapshot.status.config_path.to_string_lossy());
@@ -403,6 +408,9 @@ fn build_window(
                         button.set_sensitive(
                             snapshot.status.active.is_none()
                                 && (!action.privileged() || snapshot.status.system_changes_enabled)
+                                && (!action.requires_configuration()
+                                    || snapshot.status.config_kind
+                                        != crate::config::ConfigKind::Unknown)
                                 && (*action != Action::UpdateInputs
                                     || snapshot.status.config_kind
                                         == crate::config::ConfigKind::Flake),

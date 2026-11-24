@@ -67,6 +67,7 @@
     "envLegacy": "Legacy (configuration.nix)",
     "envLegacyShort": "Legacy",
     "missingConfiguration": "Не найдены flake.nix и configuration.nix",
+    "configurationInaccessible": "У Yonix нет доступа к конфигурации",
     "checkingSafe": "Проверка и сборка не меняют работающую систему.",
     "maintenance": "Обслуживание",
     "fullLogs": "Последние 128 КиБ · полные логи сохраняются на хосте",

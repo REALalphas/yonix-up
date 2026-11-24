@@ -1,4 +1,4 @@
-use crate::config::Config;
+use crate::config::{Config, ConfigKind};
 use anyhow::{Context, Result, bail};
 use fs2::FileExt;
 use serde::{Deserialize, Serialize};
@@ -27,6 +27,9 @@ pub enum Action {
 impl Action {
     pub fn privileged(self) -> bool {
         matches!(self, Self::Switch | Self::Rollback | Self::Clean)
+    }
+    pub fn requires_configuration(self) -> bool {
+        !matches!(self, Self::Rollback | Self::Clean)
     }
     pub fn name(self) -> &'static str {
         match self {
@@ -66,7 +69,9 @@ pub struct Status {
     /// Environment type detected from `config_path`. Defaults to flake so
     /// that statuses from older (flake-only) peers still deserialize.
     #[serde(default)]
-    pub config_kind: crate::config::ConfigKind,
+    pub config_kind: ConfigKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub config_error: Option<String>,
     /// A switch installed a new version and the server will restart itself
     /// once the current operation finishes.
     #[serde(default)]
@@ -113,6 +118,18 @@ impl Step {
 }
 
 pub fn plan(config: &Config, action: Action) -> Result<Vec<Step>> {
+    let kind = if action.requires_configuration() {
+        let kind = config.config_kind()?;
+        if kind == ConfigKind::Unknown {
+            bail!(
+                "No flake.nix or configuration.nix in {}",
+                config.config_path.display()
+            );
+        }
+        kind
+    } else {
+        ConfigKind::Unknown
+    };
     if action.privileged() {
         let helper = config.privileged_helper.as_ref().context(
             "System changes are disabled. Enable programs.yonix.allowSystemChanges in NixOS.",
@@ -127,7 +144,7 @@ pub fn plan(config: &Config, action: Action) -> Result<Vec<Step>> {
             ],
         )]);
     }
-    if config.config_kind() == crate::config::ConfigKind::Legacy {
+    if kind == ConfigKind::Legacy {
         return legacy_plan(config, action);
     }
     let target = format!(
@@ -295,6 +312,10 @@ impl Engine {
     }
 
     pub fn status(&self) -> Status {
+        let (config_kind, config_error) = match self.config.config_kind() {
+            Ok(kind) => (kind, None),
+            Err(error) => (ConfigKind::Unknown, Some(format!("{error:#}"))),
+        };
         let inner = self.inner.lock().unwrap();
         let active_action = inner
             .active
@@ -314,7 +335,8 @@ impl Engine {
             system_changes_enabled: self.config.privileged_helper.is_some(),
             active: inner.active.clone(),
             active_action,
-            config_kind: self.config.config_kind(),
+            config_kind,
+            config_error,
             needs_restart: inner.restart_target.is_some(),
         }
     }
@@ -354,15 +376,6 @@ impl Engine {
     }
     pub fn start(&self, action: Action) -> Result<Job> {
         let steps = plan(&self.config, action)?;
-        if self.config.config_kind() == crate::config::ConfigKind::Unknown
-            && action != Action::Clean
-            && action != Action::Rollback
-        {
-            bail!(
-                "No flake.nix or configuration.nix in {}",
-                self.config.config_path.display()
-            );
-        }
         let mut inner = self.inner.lock().unwrap();
         if inner.active.is_some() {
             bail!("Another operation is running");
