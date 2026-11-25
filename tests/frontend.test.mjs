@@ -4,7 +4,7 @@ import {createServer} from 'vite';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {createElement} from 'react';
 import {readFileSync,readdirSync} from 'node:fs';
-const server=await createServer({configFile:'frontend/vite.config.ts',server:{middlewareMode:true},appType:'custom'});
+const server=await createServer({configFile:'frontend/vite.config.ts',server:{middlewareMode:true,hmr:false,ws:false},appType:'custom'});
 after(()=>server.close());
 const model=await server.ssrLoadModule('/model.ts');
 const i18n=await server.ssrLoadModule('/i18n.ts');

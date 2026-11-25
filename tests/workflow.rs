@@ -11,6 +11,27 @@ use std::{
 };
 use yonix::{client::Client, config::Config, engine::Action};
 struct Process(Child);
+impl Process {
+    fn stop_gracefully(&mut self) {
+        let signal = Command::new("kill")
+            .args(["-TERM", &self.0.id().to_string()])
+            .status()
+            .unwrap();
+        assert!(signal.success(), "Could not signal the fixture daemon");
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            if let Some(status) = self.0.try_wait().unwrap() {
+                assert!(status.success(), "Daemon stopped with {status}");
+                return;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "Daemon did not exit after SIGTERM"
+            );
+            thread::sleep(Duration::from_millis(20));
+        }
+    }
+}
 impl Drop for Process {
     fn drop(&mut self) {
         let _ = self.0.kill();
@@ -255,10 +276,15 @@ if [ -f fail ]; then exit 7; fi
     // A fixed sleep races with scheduling on busy CI runners.
     fs::write(repo.join("hold-build"), "").unwrap();
     let job = client.start(Action::Build, false).unwrap();
+    let active = client.status();
     let concurrent = client.start(Action::Check, false);
     fs::remove_file(repo.join("hold-build")).unwrap();
+    let active = active.unwrap();
+    assert_eq!(active.active.as_deref(), Some(job.id.as_str()));
+    assert_eq!(active.active_action, Some(Action::Build));
     assert!(concurrent.is_err(), "Parallel operations must be rejected");
     assert_eq!(await_job(&client, &job.id).status, "succeeded");
+    assert_eq!(client.status().unwrap().active_action, None);
     let log = client.log(&job.id).unwrap();
     assert!(log.contains("stdout:"));
     assert!(log.contains("stderr: fixture"));
@@ -288,6 +314,11 @@ if [ -f fail ]; then exit 7; fi
         .output()
         .unwrap();
     assert!(!cli.status.success());
+    let failed_diff = client.start(Action::Diff, false).unwrap();
+    assert_eq!(await_job(&client, &failed_diff.id).status, "failed");
+    let failed_diff_log = client.log(&failed_diff.id).unwrap();
+    assert!(failed_diff_log.contains("Operation failed"));
+    assert!(!failed_diff_log.contains("diff-closures"));
     fs::remove_file(repo.join("fail")).unwrap();
     let diff = client.start(Action::Diff, false).unwrap();
     assert_eq!(await_job(&client, &diff.id).status, "succeeded");
@@ -295,8 +326,7 @@ if [ -f fail ]; then exit 7; fi
     let update = client.start(Action::UpdateInputs, true).unwrap();
     assert_eq!(await_job(&client, &update.id).status, "succeeded");
     let before = client.jobs().unwrap().len();
-    process.0.kill().unwrap();
-    process.0.wait().unwrap();
+    process.stop_gracefully();
     process = spawn();
     ready();
     assert_eq!(client.jobs().unwrap().len(), before);
@@ -312,7 +342,7 @@ if [ -f fail ]; then exit 7; fi
         .unwrap();
     let history: Value = serde_json::from_slice(&cli.stdout).unwrap();
     assert_eq!(history.as_array().unwrap().len(), before);
-    drop(process);
+    process.stop_gracefully();
 }
 
 #[test]
@@ -363,7 +393,7 @@ if [ -f fail ]; then exit 7; fi
     let config_file = root.join("config.json");
     fs::write(&config_file, serde_json::to_vec(&config).unwrap()).unwrap();
     let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap());
-    let process = Process(
+    let mut process = Process(
         Command::new(env!("CARGO_BIN_EXE_yonix"))
             .args(["--config", config_file.to_str().unwrap(), "serve"])
             .env("PATH", &path)
@@ -415,5 +445,5 @@ if [ -f fail ]; then exit 7; fi
     let check = client.start(Action::Check, false).unwrap();
     assert_eq!(await_job(&client, &check.id).status, "succeeded");
     assert!(client.log(&check.id).unwrap().contains("dry-build"));
-    drop(process);
+    process.stop_gracefully();
 }

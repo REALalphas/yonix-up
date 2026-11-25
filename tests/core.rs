@@ -610,3 +610,205 @@ fn pairing_rejects_bad_links_codes_and_paths() {
     // Padded base64 is rejected.
     assert!(parse_link("YWJjZA==#12").is_err());
 }
+
+#[test]
+fn inaccessible_config_reports_the_path_and_allows_config_independent_plans() {
+    let (dir, mut config) = fixture();
+    config.config_path = dir.path().join("not-a-directory");
+    fs::write(&config.config_path, "").unwrap();
+    config.privileged_helper = Some(dir.path().join("helper"));
+    let engine = Engine::open(config.clone()).unwrap();
+
+    let status = engine.status();
+    assert_eq!(status.config_kind, ConfigKind::Unknown);
+    let inaccessible = config.config_path.join("flake.nix");
+    assert!(
+        status
+            .config_error
+            .unwrap()
+            .contains(inaccessible.to_str().unwrap())
+    );
+
+    for action in [
+        Action::Check,
+        Action::Build,
+        Action::Diff,
+        Action::UpdateInputs,
+        Action::Switch,
+    ] {
+        let error = plan(&config, action).unwrap_err();
+        assert!(
+            error.to_string().contains(inaccessible.to_str().unwrap()),
+            "{action:?}: {error}"
+        );
+    }
+    for action in [Action::Rollback, Action::Clean] {
+        let steps = plan(&config, action).unwrap();
+        assert_eq!(steps.len(), 1);
+        assert_eq!(steps[0].program, "sudo");
+        assert_eq!(
+            steps[0].args,
+            [
+                "-n",
+                "--",
+                config.privileged_helper.as_ref().unwrap().to_str().unwrap(),
+                action.name()
+            ]
+        );
+    }
+}
+
+#[test]
+fn status_reads_current_cache_key_and_handles_missing_key() {
+    use yonix::config::Cache;
+
+    let (dir, mut config) = fixture();
+    let key_path = dir.path().join("cache-key");
+    config.cache = Some(Cache {
+        url: "http://127.0.0.1:9848".into(),
+        public_key_file: key_path.clone(),
+    });
+    let engine = Engine::open(config).unwrap();
+
+    let cache = engine.status().cache.unwrap();
+    assert_eq!(cache.url, "http://127.0.0.1:9848");
+    assert_eq!(cache.public_key, None);
+    for key in ["fixture:abc", "fixture:def"] {
+        fs::write(&key_path, format!("  {key}\n")).unwrap();
+        assert_eq!(
+            engine.status().cache.unwrap().public_key.as_deref(),
+            Some(key)
+        );
+    }
+}
+
+#[test]
+fn failed_admission_write_keeps_history_and_active_state_unchanged() {
+    let (_dir, config) = fixture();
+    let engine = Engine::open(config.clone()).unwrap();
+    let history = config.state_dir.join("history.json");
+    let previous = fs::read(&history).unwrap();
+    let temporary_history = config.state_dir.join("history.json.tmp");
+    fs::create_dir(&temporary_history).unwrap();
+
+    for _ in 0..2 {
+        let error = engine.start(Action::Check).unwrap_err();
+        assert_eq!(
+            error.downcast_ref::<std::io::Error>().unwrap().kind(),
+            std::io::ErrorKind::IsADirectory
+        );
+        assert!(engine.jobs().is_empty());
+        assert!(engine.status().active.is_none());
+        assert!(engine.status().active_action.is_none());
+        assert_eq!(fs::read(&history).unwrap(), previous);
+    }
+
+    fs::remove_dir(temporary_history).unwrap();
+    drop(engine);
+    assert!(Engine::open(config).unwrap().jobs().is_empty());
+}
+
+#[test]
+fn operation_log_returns_only_the_last_128_kib_and_decodes_lossily() {
+    let (_dir, config) = fixture();
+    fs::create_dir_all(config.state_dir.join("jobs")).unwrap();
+    fs::write(
+        config.state_dir.join("history.json"),
+        r#"[{"id":"older","action":"build","status":"succeeded","started":1,"finished":2,"error":null},{"id":"newer","action":"check","status":"failed","started":3,"finished":4,"error":"fixture error"}]"#,
+    ).unwrap();
+    let file = config.state_dir.join("jobs/older.log");
+    let mut bytes = b"discarded prefix".to_vec();
+    bytes.extend(std::iter::repeat_n(b'x', 128 * 1024 - 2));
+    bytes.extend([0xff, b'\n']);
+    fs::write(file, bytes).unwrap();
+    let engine = Engine::open(config).unwrap();
+
+    assert_eq!(
+        engine
+            .jobs()
+            .iter()
+            .map(|job| job.id.as_str())
+            .collect::<Vec<_>>(),
+        ["newer", "older"]
+    );
+    assert_eq!(
+        engine.log("older").unwrap(),
+        format!("{}\u{fffd}\n", "x".repeat(128 * 1024 - 2))
+    );
+    assert_eq!(
+        engine
+            .log("newer")
+            .unwrap_err()
+            .downcast_ref::<std::io::Error>()
+            .unwrap()
+            .kind(),
+        std::io::ErrorKind::NotFound
+    );
+}
+
+#[test]
+fn shared_token_mode_repairs_permissions_without_rotating_existing_token() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let (_dir, mut config) = fixture();
+    config.shared_token = true;
+    let _engine = Engine::open(config.clone()).unwrap();
+    assert_eq!(
+        fs::metadata(&config.state_dir)
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777,
+        0o710
+    );
+
+    let token = engine::ensure_token(&config).unwrap();
+    assert_eq!(
+        fs::metadata(config.token_path())
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777,
+        0o640
+    );
+    fs::set_permissions(config.token_path(), fs::Permissions::from_mode(0o600)).unwrap();
+    assert_eq!(engine::ensure_token(&config).unwrap(), token);
+    assert_eq!(
+        fs::metadata(config.token_path())
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777,
+        0o640
+    );
+
+    fs::write(config.token_path(), "not-a-token").unwrap();
+    assert!(
+        engine::ensure_token(&config)
+            .unwrap_err()
+            .to_string()
+            .contains("Invalid token file")
+    );
+    assert_eq!(
+        fs::read_to_string(config.token_path()).unwrap(),
+        "not-a-token"
+    );
+}
+
+#[test]
+fn pairing_base64url_matches_known_vectors_and_rejects_invalid_input() {
+    use yonix::pairing::{decode_b64url, encode_b64url};
+
+    for (bytes, encoded) in [
+        (&b"f"[..], "Zg"),
+        (&b"fo"[..], "Zm8"),
+        (&b"foo"[..], "Zm9v"),
+        (&[0xfb, 0xff, 0xef][..], "-__v"),
+    ] {
+        assert_eq!(encode_b64url(bytes), encoded);
+        assert_eq!(decode_b64url(encoded).unwrap(), bytes);
+    }
+    for rejected in ["", "Z", "Zg==", "Zé", "+//v"] {
+        assert!(decode_b64url(rejected).is_err(), "{rejected:?}");
+    }
+}
