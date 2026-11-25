@@ -216,3 +216,51 @@ pub async fn respond(engine: Engine) -> Result<()> {
         let _ = socket.send_to(&packet, (GROUP, PORT)).await;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn interface_matches_only_local_ipv4_addresses_in_its_subnet() {
+        for (address, mask, accepted, rejected) in [
+            ("10.28.16.1", "255.255.240.0", "10.28.31.254", "10.28.32.1"),
+            ("127.0.0.1", "255.0.0.0", "127.0.0.2", "10.0.0.1"),
+            ("169.254.1.2", "255.255.0.0", "169.254.3.4", "169.253.1.2"),
+        ] {
+            let interface = Interface {
+                ip: address.parse().unwrap(),
+                mask: mask.parse().unwrap(),
+            };
+            assert!(interface.matches(accepted.parse().unwrap()), "{accepted}");
+            assert!(!interface.matches(rejected.parse().unwrap()), "{rejected}");
+        }
+        // A broad netmask must not turn public or multicast addresses into peers.
+        let interface = Interface {
+            ip: Ipv4Addr::new(10, 0, 0, 1),
+            mask: Ipv4Addr::UNSPECIFIED,
+        };
+        assert!(!interface.matches(Ipv4Addr::new(192, 0, 2, 1)));
+        assert!(!interface.matches(GROUP));
+        assert!(!interface.matches(Ipv4Addr::LOCALHOST));
+    }
+
+    #[tokio::test]
+    async fn ipv6_listener_skips_ipv4_multicast_discovery() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = Config {
+            state_dir: dir.path().join("state"),
+            host: "discovery-test".into(),
+            listen_address: std::net::Ipv6Addr::LOCALHOST.into(),
+            ..Config::default()
+        };
+        assert!(discover(&config).await.unwrap().is_empty());
+        tokio::time::timeout(
+            Duration::from_secs(1),
+            respond(Engine::open(config).unwrap()),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    }
+}

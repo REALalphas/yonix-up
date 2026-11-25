@@ -678,6 +678,78 @@ mod tests {
             );
             std::thread::sleep(Duration::from_millis(20));
         }
+        fn operation_button(widget: &gtk::Widget, tooltip: &str) -> Option<gtk::Button> {
+            if let Some(button) = widget.downcast_ref::<gtk::Button>() {
+                if button.tooltip_text().as_deref() == Some(tooltip) {
+                    return Some(button.clone());
+                }
+            }
+            let mut child = widget.first_child();
+            while let Some(widget) = child {
+                if let Some(button) = operation_button(&widget, tooltip) {
+                    return Some(button);
+                }
+                child = widget.next_sibling();
+            }
+            None
+        }
+        let language = Language("en");
+        let build = operation_button(
+            english_window.upcast_ref(),
+            description(language, Action::Build),
+        )
+        .unwrap();
+        let update = operation_button(
+            english_window.upcast_ref(),
+            label(language, Action::UpdateInputs),
+        )
+        .unwrap();
+        assert!(!build.is_sensitive());
+        assert!(!update.is_sensitive());
+
+        let wait_until_sensitive = |button: &gtk::Button| {
+            let deadline = std::time::Instant::now() + Duration::from_secs(5);
+            while !button.is_sensitive() {
+                while context.pending() {
+                    context.iteration(false);
+                }
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "Button stayed disabled: {:?}",
+                    button.tooltip_text()
+                );
+                std::thread::sleep(Duration::from_millis(20));
+            }
+        };
+        let legacy = config.config_path.join("configuration.nix");
+        let flake = config.config_path.join("flake.nix");
+        std::fs::write(&legacy, "{}").unwrap();
+        wait_until_sensitive(&build);
+        assert!(
+            !update.is_sensitive(),
+            "Legacy configurations have no flake.lock"
+        );
+
+        std::fs::write(&flake, "{}").unwrap();
+        wait_until_sensitive(&update);
+        let (send, receive) = mpsc::channel();
+        launch(&english_window, &send, Action::UpdateInputs, language);
+        let dialog = english_window
+            .visible_dialog()
+            .unwrap()
+            .downcast::<adw::AlertDialog>()
+            .unwrap();
+        assert_eq!(dialog.body(), language.text("confirmUpdate"));
+        assert_eq!(dialog.default_response().as_deref(), Some("cancel"));
+        let (responded, response) = mpsc::channel();
+        dialog.connect_response(None, move |_, value| {
+            responded.send(value.to_owned()).unwrap();
+        });
+        assert!(dialog.close());
+        assert_eq!(response.try_recv().unwrap(), "cancel");
+        assert!(matches!(receive.try_recv(), Err(mpsc::TryRecvError::Empty)));
+        std::fs::remove_file(flake).unwrap();
+        std::fs::remove_file(legacy).unwrap();
         english_window.close();
         for (code, _) in crate::i18n::LOCALES {
             if matches!(*code, "ru" | "en") {

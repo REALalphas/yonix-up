@@ -15,7 +15,7 @@ in stdenvNoCC.mkDerivation {
   version = "0.1.0";
   src = lib.fileset.toSource {
     root = ../.;
-    fileset = lib.fileset.unions ([ ../package.json ../package-lock.json ../tsconfig.json ../frontend ../locales ../tests/frontend.test.mjs ] ++ localArchives);
+    fileset = lib.fileset.unions ([ ../package.json ../package-lock.json ../tsconfig.json ../frontend ../locales ../tests/frontend.test.mjs ../tests/frontend-dom.test.mjs ] ++ localArchives);
   };
   nativeBuildInputs = [ nodejs ];
   buildPhase = ''

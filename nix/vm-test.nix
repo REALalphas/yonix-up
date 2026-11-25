@@ -129,6 +129,10 @@ pkgs.testers.runNixOSTest {
     machine.succeed("su - operator -c 'yonix build'")
     machine.succeed("test $(cat /var/lib/yonix/result) = tested")
     build_root = machine.succeed("readlink -f /var/lib/yonix/result").strip()
+    machine.succeed("su - operator -c 'yonix diff'")
+    compared = json.loads(machine.succeed("su - operator -c 'yonix history'"))[0]
+    assert compared["action"] == "diff" and compared["status"] == "succeeded", compared
+    assert "diff-closures" in machine.succeed("su - operator -c 'yonix logs " + compared["id"] + "'")
     # Exercise the real rebuild/activation path using this VM's existing system closure.
     # A separate profile entry gives rollback a valid previous generation without building another OS.
     current = machine.succeed("readlink -f /run/current-system").strip()
@@ -140,6 +144,11 @@ pkgs.testers.runNixOSTest {
         return "builtins.appendContext " + quoted + " { " + quoted + " = { path = true; }; }"
     activation_flake = "{ outputs = { self }: { nixosConfigurations.test.config.system.build = { toplevel = " + store_string(current) + "; nixos-rebuild = " + store_string("${pkgs.nixos-rebuild}") + "; }; }; }"
     machine.succeed("cat > /home/operator/nixos/flake.nix <<'YONIX_FLAKE'\n" + activation_flake + "\nYONIX_FLAKE")
+    before_decline = json.loads(machine.succeed("su - operator -c 'yonix history'"))
+    decline = machine.fail("su - operator -c 'yonix switch' </dev/null 2>&1")
+    assert "Operation cancelled." in decline, decline
+    assert json.loads(machine.succeed("su - operator -c 'yonix history'")) == before_decline
+    machine.fail("test -e /run/yonix-bootloader-called")
     machine.succeed("su - operator -c 'yonix switch --yes'")
     status = json.loads(machine.succeed("su - operator -c 'yonix status'"))
     assert not status["needs_restart"], status
@@ -187,14 +196,17 @@ pkgs.testers.runNixOSTest {
     machine.succeed("su - operator -c 'yonix rollback --yes'")
     run_clean()
     machine.fail("su - operator -c 'sudo -n id'")
+    before_restart = json.loads(machine.succeed("su - operator -c 'yonix history'"))
     machine.succeed("systemctl restart yonix")
     machine.wait_for_unit("yonix.service")
     machine.wait_for_open_port(9847)
     history = json.loads(machine.succeed("su - operator -c 'yonix history'"))
+    assert history == before_restart, history
+    assert "Yonix clean summary:" in machine.succeed("su - operator -c 'yonix logs " + clean_id + "'")
     assert "Re-executing from" not in machine.succeed("journalctl -u yonix.service -o cat")
     # Legacy update-inputs is rejected before a job is created.
     assert sorted(job["action"] for job in history) == sorted([
-        "check", "build", "switch", "rollback", "clean", "rollback", "clean"
+        "check", "build", "diff", "switch", "rollback", "clean", "rollback", "clean"
     ]), history
     assert all(job["status"] == "succeeded" for job in history)
   '';
