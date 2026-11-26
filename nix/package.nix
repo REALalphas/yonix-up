@@ -13,10 +13,13 @@
   callPackage,
   withGui ? true,
 }:
-let webAssets = callPackage ./web.nix {}; in
+let
+  version = (builtins.fromTOML (builtins.readFile ../Cargo.toml)).package.version;
+  webAssets = callPackage ./web.nix { inherit version; };
+in
 rustPlatform.buildRustPackage {
   pname = "yonix";
-  version = "0.1.0";
+  inherit version;
   src = lib.fileset.toSource {
     root = ../.;
     fileset = lib.fileset.unions [

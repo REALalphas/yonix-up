@@ -131,5 +131,6 @@
     "pairingAllow": "Allow pairing",
     "pairingDisabled": "Pairing is disabled",
     "pairingExpires": "Code expires in",
-    "pairingExpired": "This pairing code expired. Start a new invitation."
+    "pairingExpired": "This pairing code expired. Start a new invitation.",
+    "version": "Versão"
 }

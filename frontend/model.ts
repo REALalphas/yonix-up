@@ -9,6 +9,7 @@ export interface Job {
 }
 export type ConfigKind = 'flake' | 'legacy' | 'unknown';
 export interface Status {
+    version: string;
     host: string;
     config_path: string;
     current_system: string | null;

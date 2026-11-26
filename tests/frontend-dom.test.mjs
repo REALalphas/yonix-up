@@ -35,6 +35,7 @@ const tokenKey = 'yonix-access-token';
 const localHost = { id: 'local', label: 'Gateway fixture', local: true };
 const remoteHost = { id: 'peer-1', label: 'Peer fixture', local: false };
 const status = {
+    version: '0.1.0',
     host: 'gateway',
     config_path: '/fixture/config',
     current_system: null,
@@ -148,6 +149,7 @@ test('login trims and persists a token, and a later 401 invalidates the session'
 
     assert.equal(localStorage.getItem(tokenKey), token);
     assert.equal(button(view, en.actionBuild).disabled, false);
+    assert.ok(view.textContent.includes(`${en.version}v0.1.0`));
     assert.ok(requests.some(request => request.path === 'hosts/local/status'));
 
     rejected = true;
@@ -179,7 +181,7 @@ test('confirmation targets the selected host and successful submission opens its
             case 'hosts': return json([localHost, remoteHost]);
             case 'hosts/local/status': return json(status);
             case 'hosts/local/jobs': return json([]);
-            case 'hosts/peer-1/status': return json({ ...status, host: 'remote', active: jobStarted ? job.id : null });
+            case 'hosts/peer-1/status': return json({ ...status, version: '0.2.0', host: 'remote', active: jobStarted ? job.id : null });
             case 'hosts/peer-1/jobs':
                 if (method === 'POST') {
                     jobStarted = true;
@@ -193,6 +195,7 @@ test('confirmation targets the selected host and successful submission opens its
     const view = await mount(t, createElement(App), { signedIn: true });
     await selectHost(view, remoteHost.id);
     assert.ok(view.textContent.includes('remote'));
+    assert.ok(view.textContent.includes(`${en.version}v0.2.0`));
 
     await click(button(view, en.actionSwitch));
     assert.ok(element(view, '[role="alert"]').textContent.includes(remoteHost.label));
