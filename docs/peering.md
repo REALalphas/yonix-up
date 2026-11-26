@@ -2,7 +2,7 @@
 
 One Yonix panel can manage the local host and peers added through the panel or Nix configuration. The browser connects only to the panel's gateway. The gateway reads each peer's private credentials and forwards a bounded set of status, job and log requests. Connections are single-hop: peers do not inherit each other's peer lists. A disconnected peer remains selected and reports an error; no operation falls back to the gateway.
 
-The selector applies to the web panel. CLI and the native GTK window continue to manage their configured local instance.
+The host selector is available in both the web panel and the native GTK window. The CLI continues to manage the configured local instance.
 
 ## Connect a host from the panel
 
