@@ -1,9 +1,12 @@
 use crate::{
     client::Client,
     engine::{Action, Job, Status},
+    peers::{Connection, Host},
 };
 use adw::{gtk, prelude::*};
 use std::{
+    cell::Cell,
+    rc::Rc,
     sync::mpsc::{self, Sender},
     time::Duration,
 };
@@ -36,13 +39,36 @@ fn language_from_names<'a>(names: impl IntoIterator<Item = &'a str>) -> Language
 
 enum Request {
     Refresh(Option<String>),
+    SelectHost(String),
     Start(Action),
+    CheckConnection(String),
+    RemoveConnection(String),
+    MintPairing,
+    AcceptPairing {
+        link: String,
+        origin: Option<String>,
+        allow_public: bool,
+    },
+    SetPairing(bool),
 }
 struct Snapshot {
+    hosts: Vec<Host>,
+    connections: Vec<Connection>,
+    selected_host: String,
     status: Status,
     jobs: Vec<Job>,
     selected: Option<String>,
     log: Option<String>,
+    connection_health: std::collections::HashMap<String, bool>,
+    notice: Option<Notice>,
+    pairing_enabled: bool,
+}
+
+enum Notice {
+    ConnectionRemoved,
+    PairingCode { code: String, link: String },
+    PairingPaired,
+    Error(String),
 }
 
 fn worker(
@@ -51,10 +77,13 @@ fn worker(
     updates: mpsc::Sender<Result<Snapshot, String>>,
 ) {
     let mut selected = None;
+    let mut selected_host = "local".to_owned();
+    let mut connection_health = std::collections::HashMap::new();
+    let mut notice = None;
     loop {
         let request = requests.recv_timeout(Duration::from_millis(1500));
         match request {
-            Ok(Request::Start(action)) => match client.start(action, true) {
+            Ok(Request::Start(action)) => match client.start_for(&selected_host, action, true) {
                 Ok(job) => selected = Some(job.id),
                 Err(error) => {
                     let _ = updates.send(Err(error.to_string()));
@@ -66,17 +95,82 @@ fn worker(
                     selected = id;
                 }
             }
+            Ok(Request::SelectHost(host)) => {
+                if host != selected_host {
+                    selected_host = host;
+                    selected = None;
+                }
+            }
+            Ok(Request::CheckConnection(id)) => {
+                let result = client.post_api(&format!("connections/{id}/check"), &serde_json::json!({}));
+                connection_health.insert(id, result.is_ok());
+                if let Err(error) = result {
+                    notice = Some(Notice::Error(error.to_string()));
+                }
+            }
+            Ok(Request::RemoveConnection(id)) => {
+                match client.post_api(&format!("connections/{id}/remove"), &serde_json::json!({})) {
+                    Ok(_) => notice = Some(Notice::ConnectionRemoved),
+                    Err(error) => notice = Some(Notice::Error(error.to_string())),
+                }
+            }
+            Ok(Request::MintPairing) => {
+                match client.post_api("pairings", &serde_json::json!({})) {
+                    Ok(invitation) => {
+                        let code = invitation.get("code").and_then(serde_json::Value::as_str).unwrap_or_default();
+                        let link = invitation.get("link").and_then(serde_json::Value::as_str).unwrap_or_default();
+                        notice = Some(Notice::PairingCode {
+                            code: code.to_owned(),
+                            link: link.to_owned(),
+                        });
+                    }
+                    Err(error) => notice = Some(Notice::Error(error.to_string())),
+                }
+            }
+            Ok(Request::AcceptPairing {
+                link,
+                origin,
+                allow_public,
+            }) => {
+                match client.post_api(
+                    "pairings/accept",
+                    &serde_json::json!({"link": link, "origin": origin, "label": null, "allow_public": allow_public}),
+                ) {
+                    Ok(_) => notice = Some(Notice::PairingPaired),
+                    Err(error) => notice = Some(Notice::Error(error.to_string())),
+                }
+            }
+            Ok(Request::SetPairing(enabled)) => {
+                match client.post_api(
+                    "pairings/settings",
+                    &serde_json::json!({"enabled": enabled}),
+                ) {
+                    Ok(_) => {}
+                    Err(error) => notice = Some(Notice::Error(error.to_string())),
+                }
+            }
             Err(mpsc::RecvTimeoutError::Disconnected) => return,
             Err(mpsc::RecvTimeoutError::Timeout) => {}
         }
         let result = (|| -> anyhow::Result<Snapshot> {
-            let status = client.status()?;
-            let jobs = client.jobs()?;
+            let hosts = client.hosts()?;
+            let connections = client.connections()?;
+            let pairing_enabled = client
+                .get_api("pairings")?
+                .get("enabled")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(true);
+            if !hosts.iter().any(|host| host.id == selected_host) {
+                selected_host = "local".to_owned();
+                selected = None;
+            }
+            let status = client.status_for(&selected_host)?;
+            let jobs = client.jobs_for(&selected_host)?;
             if selected.is_none() {
                 selected = jobs.first().map(|job| job.id.clone());
             }
             let log = if let Some(id) = &selected {
-                let mut log = client.log(id)?;
+                let mut log = client.log_for(&selected_host, id)?;
                 if let Some(error) = jobs
                     .iter()
                     .find(|j| &j.id == id)
@@ -89,10 +183,16 @@ fn worker(
                 None
             };
             Ok(Snapshot {
+                hosts,
+                connections,
+                selected_host: selected_host.clone(),
                 status,
                 jobs,
                 selected: selected.clone(),
                 log,
+                connection_health: connection_health.clone(),
+                notice: notice.take(),
+                pairing_enabled,
             })
         })();
         if updates.send(result.map_err(|e| e.to_string())).is_err() {
@@ -130,25 +230,39 @@ fn description(language: Language, action: Action) -> &'static str {
         _ => label(language, action),
     }
 }
+#[cfg(test)]
 fn launch(
     window: &adw::ApplicationWindow,
     sender: &Sender<Request>,
     action: Action,
     language: Language,
 ) {
+    launch_for_host(window, sender, action, language, None);
+}
+
+fn launch_for_host(
+    window: &adw::ApplicationWindow,
+    sender: &Sender<Request>,
+    action: Action,
+    language: Language,
+    host_label: Option<String>,
+) {
     if !action.privileged() && action != Action::UpdateInputs {
         let _ = sender.send(Request::Start(action));
         return;
     }
-    let body = match action {
+    let explanation = match action {
         Action::Switch => language.text("confirmSwitch"),
         Action::Rollback => language.text("confirmRollback"),
         Action::Clean => language.text("confirmClean"),
         _ => language.text("confirmUpdate"),
     };
+    let body = host_label
+        .map(|host| format!("{}: {host}\n\n{explanation}", language.text("targetHost")))
+        .unwrap_or_else(|| explanation.to_owned());
     let dialog = adw::AlertDialog::builder()
         .heading(label(language, action))
-        .body(body)
+        .body(&body)
         .default_response("cancel")
         .close_response("cancel")
         .build();
@@ -188,6 +302,23 @@ fn build_window(
     let header = adw::HeaderBar::new();
     let header_title = adw::WindowTitle::new("Yonix", initial_language.text("companion"));
     header.set_title_widget(Some(&header_title));
+    let (send, receive) = mpsc::channel();
+    let (update_send, updates) = mpsc::channel();
+    let host_selector = gtk::ComboBoxText::new();
+    host_selector.set_tooltip_text(Some(initial_language.text("managedHost")));
+    host_selector.set_valign(gtk::Align::Center);
+    let updating_hosts = Rc::new(Cell::new(false));
+    let updating_hosts_for_callback = updating_hosts.clone();
+    let selector_sender = send.clone();
+    host_selector.connect_changed(move |selector| {
+        if updating_hosts_for_callback.get() {
+            return;
+        }
+        if let Some(host) = selector.active_id() {
+            let _ = selector_sender.send(Request::SelectHost(host.to_string()));
+        }
+    });
+    header.pack_start(&host_selector);
     toolbar.add_top_bar(&header);
     let toast = adw::ToastOverlay::new();
     let content = gtk::Box::builder()
@@ -251,10 +382,10 @@ fn build_window(
         .row_spacing(8)
         .homogeneous(true)
         .build();
-    let (send, receive) = mpsc::channel();
-    let (update_send, updates) = mpsc::channel();
+    let language_client = client.clone();
     std::thread::spawn(move || worker(client, receive, update_send));
     let mut buttons = vec![];
+    let host_selector_for_actions = host_selector.clone();
     for (action, icon) in [
         (Action::Check, "emblem-ok-symbolic"),
         (Action::Build, "system-run-symbolic"),
@@ -276,9 +407,16 @@ fn build_window(
         }
         let weak_window = window.downgrade();
         let sender = send.clone();
+        let host_selector = host_selector_for_actions.clone();
         button.connect_clicked(move |_| {
             if let Some(window) = weak_window.upgrade() {
-                launch(&window, &sender, action, initial_language);
+                let host_id = host_selector
+                    .active_id()
+                    .map(|id| id.to_string())
+                    .unwrap_or_else(|| "local".to_owned());
+                let host_label = host_selector.active_text().map(|text| text.to_string());
+                let _ = sender.send(Request::SelectHost(host_id));
+                launch_for_host(&window, &sender, action, initial_language, host_label);
             }
         });
         flow.insert(&button, -1);
@@ -304,9 +442,16 @@ fn build_window(
         row.set_activatable_widget(Some(&button));
         let weak_window = window.downgrade();
         let sender = send.clone();
+        let host_selector = host_selector_for_actions.clone();
         button.connect_clicked(move |_| {
             if let Some(window) = weak_window.upgrade() {
-                launch(&window, &sender, action, initial_language);
+                let host_id = host_selector
+                    .active_id()
+                    .map(|id| id.to_string())
+                    .unwrap_or_else(|| "local".to_owned());
+                let host_label = host_selector.active_text().map(|text| text.to_string());
+                let _ = sender.send(Request::SelectHost(host_id));
+                launch_for_host(&window, &sender, action, initial_language, host_label);
             }
         });
         maintenance.add(&row);
@@ -321,6 +466,38 @@ fn build_window(
     history_box.add_css_class("boxed-list");
     history.add(&history_box);
     content.append(&history);
+    let operation_details = adw::PreferencesGroup::builder()
+        .title(initial_language.text("history"))
+        .build();
+    let operation_status = adw::ActionRow::builder()
+        .title(initial_language.text("operationStatus"))
+        .subtitle(initial_language.text("logHint"))
+        .subtitle_selectable(true)
+        .build();
+    let operation_started = adw::ActionRow::builder()
+        .title(initial_language.text("operationStarted"))
+        .subtitle(initial_language.text("unavailable"))
+        .subtitle_selectable(true)
+        .build();
+    let operation_finished = adw::ActionRow::builder()
+        .title(initial_language.text("operationFinished"))
+        .subtitle(initial_language.text("unavailable"))
+        .subtitle_selectable(true)
+        .build();
+    let operation_id = adw::ActionRow::builder()
+        .title(initial_language.text("operationId"))
+        .subtitle(initial_language.text("unavailable"))
+        .subtitle_selectable(true)
+        .build();
+    for row in [
+        &operation_status,
+        &operation_started,
+        &operation_finished,
+        &operation_id,
+    ] {
+        operation_details.add(row);
+    }
+    content.append(&operation_details);
     let log_group = adw::PreferencesGroup::builder()
         .title(initial_language.text("operationLog"))
         .description(initial_language.text("fullLogs"))
@@ -345,6 +522,174 @@ fn build_window(
     log_scroll.add_css_class("card");
     log_group.add(&log_scroll);
     content.append(&log_group);
+
+    let connections_group = adw::PreferencesGroup::builder()
+        .title(initial_language.text("connections"))
+        .description(initial_language.text("connectionsDescription"))
+        .build();
+    let connections_box = gtk::Box::new(gtk::Orientation::Vertical, 8);
+    connections_group.add(&connections_box);
+    let pairing_row = adw::ActionRow::builder()
+        .title(initial_language.text("pairingAllow"))
+        .subtitle(initial_language.text("addConnectionHelp"))
+        .build();
+    let pairing_switch = gtk::Switch::builder().valign(gtk::Align::Center).build();
+    pairing_switch.set_sensitive(false);
+    let updating_pairing = Rc::new(Cell::new(false));
+    let updating_pairing_for_callback = updating_pairing.clone();
+    pairing_row.add_suffix(&pairing_switch);
+    let share_pairing = gtk::Button::with_label(initial_language.text("addConnection"));
+    share_pairing.add_css_class("suggested-action");
+    share_pairing.set_sensitive(false);
+    pairing_row.add_suffix(&share_pairing);
+    connections_group.add(&pairing_row);
+    let accept_row = adw::ActionRow::builder()
+        .title(initial_language.text("addOtherInstance"))
+        .build();
+    let pairing_entry = gtk::Entry::builder()
+        .placeholder_text(initial_language.text("pairingPasteLink"))
+        .hexpand(true)
+        .build();
+    let accept_pairing = gtk::Button::with_label(initial_language.text("pairingAccept"));
+    accept_pairing.set_sensitive(false);
+    accept_row.add_prefix(&pairing_entry);
+    accept_row.add_suffix(&accept_pairing);
+    connections_group.add(&accept_row);
+    let pairing_origin = gtk::Entry::builder()
+        .placeholder_text(initial_language.text("pairingOriginPlaceholder"))
+        .hexpand(true)
+        .build();
+    let origin_row = adw::ActionRow::builder()
+        .title(initial_language.text("pairingOrigin"))
+        .build();
+    origin_row.add_suffix(&pairing_origin);
+    connections_group.add(&origin_row);
+    let allow_public = gtk::CheckButton::with_label(initial_language.text("pairingPublicConfirm"));
+    let public_row = adw::ActionRow::builder().build();
+    public_row.add_suffix(&allow_public);
+    connections_group.add(&public_row);
+    let pairing_result = gtk::Entry::builder()
+        .editable(false)
+        .placeholder_text(initial_language.text("pairingCode"))
+        .hexpand(true)
+        .build();
+    let copy_pairing = gtk::Button::with_label(initial_language.text("copyPairingCode"));
+    copy_pairing.set_sensitive(false);
+    let pairing_result_row = adw::ActionRow::builder()
+        .title(initial_language.text("pairingCode"))
+        .build();
+    pairing_result_row.add_prefix(&pairing_result);
+    pairing_result_row.add_suffix(&copy_pairing);
+    connections_group.add(&pairing_result_row);
+    content.append(&connections_group);
+
+    let settings_group = adw::PreferencesGroup::builder()
+        .title(initial_language.text("session"))
+        .build();
+    let language_selector = gtk::ComboBoxText::new();
+    for (code, _) in crate::i18n::LOCALES {
+        language_selector.append(Some(code), code);
+    }
+    language_selector.set_active_id(Some(initial_language.0));
+    language_selector.set_valign(gtk::Align::Center);
+    let language_row = adw::ActionRow::builder()
+        .title(initial_language.text("language"))
+        .subtitle(initial_language.0)
+        .build();
+    language_row.add_suffix(&language_selector);
+    settings_group.add(&language_row);
+    let language_app = app.clone();
+    let weak_window_for_language = window.downgrade();
+    let language_client_for_switch = language_client.clone();
+    language_selector.connect_changed(move |selector| {
+        let Some(code) = selector.active_id() else {
+            return;
+        };
+        let Some((locale, _)) = crate::i18n::LOCALES
+            .iter()
+            .find(|(locale, _)| *locale == code.as_str())
+        else {
+            return;
+        };
+        if *locale == initial_language.0 {
+            return;
+        }
+        if let Some(window) = weak_window_for_language.upgrade() {
+            window.close();
+        }
+        build_window(
+            &language_app,
+            language_client_for_switch.clone(),
+            Language(locale),
+        )
+        .present();
+    });
+    let disconnect = gtk::Button::with_label(initial_language.text("logout"));
+    disconnect.add_css_class("flat");
+    let weak_window_for_disconnect = window.downgrade();
+    let login_app = app.clone();
+    let login_client = language_client.clone();
+    disconnect.connect_clicked(move |_| {
+        if let Some(window) = weak_window_for_disconnect.upgrade() {
+            let login = build_login_window(&login_app, login_client.clone(), initial_language);
+            window.close();
+            login.present();
+        }
+    });
+    let disconnect_row = adw::ActionRow::builder()
+        .title(initial_language.text("session"))
+        .build();
+    disconnect_row.add_suffix(&disconnect);
+    settings_group.add(&disconnect_row);
+    let cache_url = adw::ActionRow::builder()
+        .title(initial_language.text("binaryCache"))
+        .subtitle(initial_language.text("unavailable"))
+        .subtitle_selectable(true)
+        .build();
+    settings_group.add(&cache_url);
+    let cache_key = adw::ActionRow::builder()
+        .title(initial_language.text("cachePublicKey"))
+        .subtitle(initial_language.text("unavailable"))
+        .subtitle_selectable(true)
+        .build();
+    settings_group.add(&cache_key);
+    content.append(&settings_group);
+
+    let sender = send.clone();
+    let pairing_switch_for_callback = pairing_switch.clone();
+    pairing_switch.connect_active_notify(move |_| {
+        if updating_pairing_for_callback.get() {
+            return;
+        }
+        let _ = sender.send(Request::SetPairing(pairing_switch_for_callback.is_active()));
+    });
+    let sender = send.clone();
+    share_pairing.connect_clicked(move |_| {
+        let _ = sender.send(Request::MintPairing);
+    });
+    let pairing_result_for_copy = pairing_result.clone();
+    copy_pairing.connect_clicked(move |_| {
+        if let Some(display) = gtk::gdk::Display::default() {
+            display
+                .clipboard()
+                .set_text(&pairing_result_for_copy.text());
+        }
+    });
+    let sender = send.clone();
+    let pairing_entry_for_accept = pairing_entry.clone();
+    let pairing_origin_for_accept = pairing_origin.clone();
+    let allow_public_for_accept = allow_public.clone();
+    accept_pairing.connect_clicked(move |_| {
+        let link = pairing_entry_for_accept.text().trim().to_owned();
+        if !link.is_empty() {
+            let origin = pairing_origin_for_accept.text().trim().to_owned();
+            let _ = sender.send(Request::AcceptPairing {
+                link,
+                origin: (!origin.is_empty()).then_some(origin),
+                allow_public: allow_public_for_accept.is_active(),
+            });
+        }
+    });
     let clamp = adw::Clamp::builder()
         .maximum_size(1000)
         .child(&content)
@@ -362,6 +707,9 @@ fn build_window(
     let mut last_history = String::new();
     let mut last_log = String::new();
     let mut last_error = String::new();
+    let mut last_hosts = String::new();
+    let mut last_connections = String::new();
+    let mut last_notice = String::new();
     adw::glib::timeout_add_local(Duration::from_millis(150), move || {
         if weak_window.upgrade().is_none() {
             return adw::glib::ControlFlow::Break;
@@ -381,6 +729,58 @@ fn build_window(
                 }
                 Ok(snapshot) => {
                     last_error.clear();
+                    if let Some(notice) = snapshot.notice {
+                        let notice_text = match notice {
+                            Notice::ConnectionRemoved => lang.text("removeConnection").to_owned(),
+                            Notice::PairingPaired => lang.text("pairingPaired").to_owned(),
+                            Notice::PairingCode { code, link } => {
+                                pairing_result.set_text(&format!(
+                                    "{}: {code} · {link}",
+                                    lang.text("pairingCode")
+                                ));
+                                copy_pairing.set_sensitive(true);
+                                format!("{}: {code}", lang.text("pairingCode"))
+                            }
+                            Notice::Error(error) => error,
+                        };
+                        if notice_text != last_notice {
+                            toast.add_toast(adw::Toast::new(&notice_text));
+                            last_notice = notice_text;
+                        }
+                    }
+                    if pairing_switch.is_active() != snapshot.pairing_enabled {
+                        updating_pairing.set(true);
+                        pairing_switch.set_active(snapshot.pairing_enabled);
+                        updating_pairing.set(false);
+                    }
+                    share_pairing.set_sensitive(snapshot.pairing_enabled);
+                    pairing_switch.set_sensitive(true);
+                    accept_pairing.set_sensitive(true);
+                    if !snapshot.pairing_enabled {
+                        copy_pairing.set_sensitive(false);
+                    }
+                    let hosts_key = snapshot
+                        .hosts
+                        .iter()
+                        .map(|host| format!("{}\u{1f}{}", host.id, host.label))
+                        .collect::<Vec<_>>()
+                        .join("\u{1e}");
+                    if hosts_key != last_hosts {
+                        updating_hosts.set(true);
+                        host_selector.remove_all();
+                        for host_entry in &snapshot.hosts {
+                            host_selector.append(Some(&host_entry.id), &host_entry.label);
+                        }
+                        host_selector.set_active_id(Some(&snapshot.selected_host));
+                        updating_hosts.set(false);
+                        last_hosts = hosts_key;
+                    } else if host_selector.active_id().as_deref()
+                        != Some(snapshot.selected_host.as_str())
+                    {
+                        updating_hosts.set(true);
+                        host_selector.set_active_id(Some(&snapshot.selected_host));
+                        updating_hosts.set(false);
+                    }
                     host.set_subtitle(&format!(
                         "{} · {}",
                         snapshot.status.host,
@@ -410,6 +810,115 @@ fn build_window(
                     } else {
                         lang.text("desktopReady")
                     });
+                    if let Some(cache) = &snapshot.status.cache {
+                        cache_url.set_subtitle(&cache.url);
+                        cache_key.set_subtitle(
+                            cache
+                                .public_key
+                                .as_deref()
+                                .unwrap_or(lang.text("unavailable")),
+                        );
+                    } else {
+                        cache_url.set_subtitle(lang.text("unavailable"));
+                        cache_key.set_subtitle(lang.text("unavailable"));
+                    }
+                    let connections_key = snapshot
+                        .connections
+                        .iter()
+                        .map(|connection| {
+                            format!(
+                                "{}\u{1f}{}\u{1f}{:?}",
+                                connection.id,
+                                connection.url,
+                                snapshot.connection_health.get(&connection.id)
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\u{1e}");
+                    if connections_key != last_connections {
+                        while let Some(child) = connections_box.first_child() {
+                            connections_box.remove(&child);
+                        }
+                        if snapshot.connections.is_empty() {
+                            connections_box.append(
+                                &gtk::Label::builder()
+                                    .label(lang.text("noConnections"))
+                                    .xalign(0.0)
+                                    .build(),
+                            );
+                        }
+                        for connection in &snapshot.connections {
+                            let row = adw::ActionRow::builder()
+                                .title(&connection.label)
+                                .subtitle(&connection.url)
+                                .subtitle_selectable(true)
+                                .build();
+                            let status = if snapshot.connection_health.get(&connection.id)
+                                == Some(&true)
+                            {
+                                lang.text("connectionOnline")
+                            } else if snapshot.connection_health.get(&connection.id) == Some(&false)
+                            {
+                                lang.text("connectionOffline")
+                            } else {
+                                lang.text("connectingShort")
+                            };
+                            row.set_subtitle(&format!("{} · {status}", connection.url));
+                            if connection.managed_by_nix {
+                                row.set_tooltip_text(Some(lang.text("connectionManagedByNix")));
+                            }
+                            let check = gtk::Button::with_label(lang.text("testConnection"));
+                            check.add_css_class("flat");
+                            let sender = send.clone();
+                            let id = connection.id.clone();
+                            check.connect_clicked(move |_| {
+                                let _ = sender.send(Request::CheckConnection(id.clone()));
+                            });
+                            row.add_suffix(&check);
+                            if !connection.managed_by_nix {
+                                let remove = gtk::Button::with_label(lang.text("removeConnection"));
+                                remove.add_css_class("flat");
+                                let weak_window = weak_window.clone();
+                                let sender = send.clone();
+                                let id = connection.id.clone();
+                                let label = connection.label.clone();
+                                remove.connect_clicked(move |_| {
+                                    if let Some(window) = weak_window.upgrade() {
+                                        let dialog = adw::AlertDialog::builder()
+                                            .heading(lang.text("removeConnection"))
+                                            .body(format!(
+                                                "{}\n\n{}",
+                                                label,
+                                                lang.text("removeConnectionHelp")
+                                            ))
+                                            .default_response("cancel")
+                                            .close_response("cancel")
+                                            .build();
+                                        dialog.add_responses(&[
+                                            ("cancel", lang.text("cancel")),
+                                            ("remove", lang.text("removeConnection")),
+                                        ]);
+                                        dialog.set_response_appearance(
+                                            "remove",
+                                            adw::ResponseAppearance::Destructive,
+                                        );
+                                        let sender = sender.clone();
+                                        let id = id.clone();
+                                        dialog.connect_response(None, move |_, response| {
+                                            if response == "remove" {
+                                                let _ = sender
+                                                    .send(Request::RemoveConnection(id.clone()));
+                                            }
+                                        });
+                                        dialog.present(Some(&window));
+                                    }
+                                });
+                                row.add_suffix(&remove);
+                            }
+                            connections_box.append(&row);
+                        }
+                        last_connections = connections_key;
+                    }
                     for (action, button) in &buttons {
                         button.set_sensitive(
                             snapshot.status.active.is_none()
@@ -466,6 +975,23 @@ fn build_window(
                         }
                         last_history = history_key;
                     }
+                    if let Some(selected) = snapshot.selected.as_deref() {
+                        if let Some(job) = snapshot.jobs.iter().find(|job| job.id == selected) {
+                            operation_status.set_subtitle(status_label(lang, &job.status));
+                            operation_started.set_subtitle(&job.started.to_string());
+                            operation_finished.set_subtitle(
+                                &job.finished
+                                    .map(|finished| finished.to_string())
+                                    .unwrap_or_else(|| lang.text("unavailable").to_owned()),
+                            );
+                            operation_id.set_subtitle(&job.id);
+                        }
+                    } else {
+                        operation_status.set_subtitle(lang.text("logHint"));
+                        operation_started.set_subtitle(lang.text("unavailable"));
+                        operation_finished.set_subtitle(lang.text("unavailable"));
+                        operation_id.set_subtitle(lang.text("unavailable"));
+                    }
                     let log_text = snapshot
                         .log
                         .as_deref()
@@ -482,6 +1008,79 @@ fn build_window(
     window
 }
 
+fn build_login_window(
+    app: &adw::Application,
+    client: Client,
+    language: Language,
+) -> adw::ApplicationWindow {
+    let window = adw::ApplicationWindow::builder()
+        .application(app)
+        .title("Yonix")
+        .default_width(520)
+        .default_height(420)
+        .build();
+    let content = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .spacing(18)
+        .margin_top(32)
+        .margin_bottom(32)
+        .margin_start(32)
+        .margin_end(32)
+        .build();
+    let title = gtk::Label::builder()
+        .label(language.text("welcome"))
+        .xalign(0.0)
+        .build();
+    title.add_css_class("title-1");
+    content.append(&title);
+    let description = gtk::Label::builder()
+        .label(language.text("welcomeDescription"))
+        .wrap(true)
+        .xalign(0.0)
+        .build();
+    description.add_css_class("dim-label");
+    content.append(&description);
+    let token = gtk::Entry::builder()
+        .placeholder_text(language.text("tokenPlaceholder"))
+        .visibility(false)
+        .hexpand(true)
+        .build();
+    content.append(&token);
+    let error = gtk::Label::builder().xalign(0.0).wrap(true).build();
+    error.add_css_class("error");
+    content.append(&error);
+    let connect = gtk::Button::with_label(language.text("connect"));
+    connect.add_css_class("suggested-action");
+    content.append(&connect);
+    let weak_window = window.downgrade();
+    let app = app.clone();
+    let client_for_login = client.clone();
+    let token_for_login = token.clone();
+    let error_for_login = error.clone();
+    let authenticate =
+        Rc::new(
+            move || match client_for_login.with_token(token_for_login.text().as_str()) {
+                Ok(client) => {
+                    let next = build_window(&app, client, language);
+                    next.present();
+                    if let Some(window) = weak_window.upgrade() {
+                        window.close();
+                    }
+                }
+                Err(error) => error_for_login.set_text(&error.to_string()),
+            },
+        );
+    let authenticate_for_click = authenticate.clone();
+    connect.connect_clicked(move |_| authenticate_for_click());
+    token.connect_activate(move |_| authenticate());
+    let clamp = adw::Clamp::builder()
+        .maximum_size(620)
+        .child(&content)
+        .build();
+    window.set_content(Some(&clamp));
+    window
+}
+
 pub fn run(client: Client) {
     let app = adw::Application::builder()
         .application_id("com.alphas.yonix")
@@ -489,8 +1088,10 @@ pub fn run(client: Client) {
     app.connect_activate(move |app| {
         if let Some(window) = app.active_window() {
             window.present();
-        } else {
+        } else if client.has_token() {
             build_window(app, client.clone(), Language::system()).present();
+        } else {
+            build_login_window(app, client.clone(), Language::system()).present();
         }
     });
     app.run_with_args::<&str>(&[]);

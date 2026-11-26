@@ -89,7 +89,7 @@ pub fn validate_peer_url(text: &str) -> Result<()> {
     Ok(())
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Host {
     pub id: String,
     pub label: String,
@@ -97,7 +97,7 @@ pub struct Host {
 }
 
 /// Public connection details. Credentials are only serialized to the private state file.
-#[derive(Clone, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Connection {
     pub id: String,
     pub label: String,
