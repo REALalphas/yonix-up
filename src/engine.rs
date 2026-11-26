@@ -187,7 +187,7 @@ pub fn plan(config: &Config, action: Action) -> Result<Vec<Step>> {
             "flake".into(),
             "update".into(),
             "--flake".into(),
-            config.config_path.to_string_lossy().into_owned(),
+            config.flake_source(),
         ])],
         _ => unreachable!(),
     })
