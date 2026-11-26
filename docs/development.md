@@ -101,6 +101,12 @@ GitHub Actions runs `.github/workflows/ci.yml` on pushes, pull requests, and man
 
 CI requires no repository secrets and executes using pinned dependencies from `flake.lock`, `Cargo.lock`, and `package-lock.json`.
 
+### Yonix version
+
+Yonix starts at `0.1.0`. Each push to `main` triggers a patch increment. To increment the minor version and reset the patch to zero, open **Actions → Bump Yonix version → Run workflow** and select `main`.
+
+The workflow commits the new version to `main` and dispatches CI for the updated branch. It uses the repository's GitHub Actions token, which needs permission to push to `main`. Nix reads the version from `Cargo.toml`, and the workflow keeps the Cargo and npm manifests and lockfiles in sync.
+
 ---
 
 ## Manual Uninstalled Execution

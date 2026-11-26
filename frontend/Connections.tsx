@@ -12,10 +12,11 @@ export type PairingSession = {
     receivedPairs: string[] | null;
 };
 
-type Props = { token: string; gateway: string; pairingSession: PairingSession; t: (key: string) => string; onChange: () => Promise<void>; onAuthenticationError: (error: Error) => void };
-export function ConnectionsPage({ token, gateway, pairingSession, t, onChange, onAuthenticationError }: Props) {
+type Props = { token: string; gateway: string; gatewayVersion?: string; pairingSession: PairingSession; t: (key: string) => string; onChange: () => Promise<void>; onAuthenticationError: (error: Error) => void };
+export function ConnectionsPage({ token, gateway, gatewayVersion, pairingSession, t, onChange, onAuthenticationError }: Props) {
     const [connections, setConnections] = useState<Connection[]>([]);
     const [health, setHealth] = useState<Record<string, 'checking' | 'online' | 'offline'>>({});
+    const [versions, setVersions] = useState<Record<string, string>>({});
     const [busy, setBusy] = useState<string | null>(null), [loading, setLoading] = useState(true);
     const [revision, setRevision] = useState(0);
     const [error, setError] = useState(''), [removing, setRemoving] = useState<string | null>(null);
@@ -82,8 +83,11 @@ export function ConnectionsPage({ token, gateway, pairingSession, t, onChange, o
     async function checkSaved(id: string, signal: AbortSignal) {
         setHealth(current => ({ ...current, [id]: 'checking' }));
         try {
-            await api<ConnectionCheck>(token, 'connections/' + encodeURIComponent(id) + '/check', signal, {});
-            if (!signal.aborted) setHealth(current => ({ ...current, [id]: 'online' }));
+            const status = await api<ConnectionCheck>(token, 'connections/' + encodeURIComponent(id) + '/check', signal, {});
+            if (!signal.aborted) {
+                setHealth(current => ({ ...current, [id]: 'online' }));
+                setVersions(current => ({ ...current, [id]: status.version }));
+            }
         } catch (e) {
             if (!signal.aborted) {
                 setHealth(current => ({ ...current, [id]: 'offline' }));
@@ -275,10 +279,11 @@ export function ConnectionsPage({ token, gateway, pairingSession, t, onChange, o
     const remainingLabel = `${Math.floor(remainingSeconds / 60)}:${String(remainingSeconds % 60).padStart(2, '0')}`;
     return <Stack gap={5}>
         <div className="connections-grid">
-            <Card><Stack gap={3}><Text as="h2" font="heading" size="title" weight="medium">{gateway}</Text><Text tone="secondary">{t('connectionOnline')}</Text></Stack></Card>
+            <Card><Stack gap={3}><Text as="h2" font="heading" size="title" weight="medium">{gateway}</Text><Text tone="secondary">{t('connectionOnline')}</Text>{gatewayVersion && <Text tone="muted">{t('version')}: v{gatewayVersion}</Text>}</Stack></Card>
             {connections.map(entry => <Card key={entry.id}><Stack gap={4}>
                 <div className="path-value"><Text as="h2" font="heading" size="title" weight="medium">{entry.label}</Text><Text font="mono">{entry.url}</Text></div>
                 <div role="status"><Text tone="secondary">{t(health[entry.id] === 'online' ? 'connectionOnline' : health[entry.id] === 'offline' ? 'connectionOffline' : 'connectingShort')}</Text></div>
+                {health[entry.id] === 'online' && versions[entry.id] && <Text tone="muted">{t('version')}: v{versions[entry.id]}</Text>}
                 {entry.managed_by_nix && <Text tone="muted">{t('connectionManagedByNix')}</Text>}
                 {removing === entry.id ? <Stack gap={3}><Text>{t('removeConnectionHelp')}</Text><div className="button-row"><Button variant="simple" disabled={!!busy} onPress={() => setRemoving(null)}>{t('cancel')}</Button><Button disabled={!!busy} loading={busy === entry.id} onPress={() => void remove(entry.id)}>{t('removeConnection')}</Button></div></Stack> : <div className="button-row"><Button variant="simple" disabled={!!busy || health[entry.id] === 'checking'} onPress={() => void checkSaved(entry.id, controller.current.signal)}>{t('testConnection')}</Button>{!entry.managed_by_nix && <Button variant="simple" disabled={!!busy} onPress={() => setRemoving(entry.id)}>{t('removeConnection')}</Button>}</div>}
             </Stack></Card>)}

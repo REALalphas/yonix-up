@@ -1,0 +1,56 @@
+name: Bump Yonix version
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  bump:
+    name: Bump version
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Update main
+        env:
+          BUMP: ${{ github.event_name == 'workflow_dispatch' && 'minor' || 'patch' }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          marker="Version-Run: $GITHUB_RUN_ID"
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git checkout --detach FETCH_HEAD
+            if [[ -n "$(git log -1 --format=%H --fixed-strings --grep="$marker" FETCH_HEAD)" ]]; then
+              exit 0
+            fi
+            base=$(git rev-parse HEAD)
+            version=$(node scripts/bump-version.mjs "$BUMP" | awk '{ print $3 }')
+            git add Cargo.toml Cargo.lock package.json package-lock.json CHANGELOG.md
+            git commit -m "chore: bump Yonix to $version" -m "$marker"
+            if git push origin HEAD:refs/heads/main; then
+              exit 0
+            fi
+            git fetch origin main
+            if [[ "$(git rev-parse FETCH_HEAD)" == "$base" ]]; then
+              exit 1
+            fi
+            echo "main advanced during attempt $attempt. Retrying."
+          done
+          exit 1
+      # A push with GITHUB_TOKEN does not trigger push workflows.
+      - name: Verify and publish the bumped version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run ci.yml --ref main

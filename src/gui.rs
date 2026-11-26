@@ -364,6 +364,11 @@ fn build_window(
         .subtitle_selectable(true)
         .build();
     system.add(&current);
+    let version = adw::ActionRow::builder()
+        .title(initial_language.text("version"))
+        .subtitle_selectable(true)
+        .build();
+    system.add(&version);
     content.append(&system);
     let actions_group = adw::PreferencesGroup::builder()
         .title(initial_language.text("whatToDo"))
@@ -799,6 +804,7 @@ fn build_window(
                             .map(|p| p.to_string_lossy().into_owned())
                             .unwrap_or_else(|| lang.text("unavailable").into()),
                     );
+                    version.set_subtitle(&format!("v{}", snapshot.status.version));
                     subtitle.set_text(if snapshot.status.active.is_some() {
                         lang.text("desktopWorking")
                     } else {
@@ -1227,6 +1233,7 @@ mod tests {
             {
                 assert!(labels.iter().any(|s| s == "Собрать"));
                 assert!(labels.iter().any(|s| s == "Операций пока нет"));
+                assert!(labels.iter().any(|s| s == "v0.1.0"));
                 break;
             }
             assert!(

@@ -1,4 +1,4 @@
-{ lib, stdenvNoCC, nodejs, fetchurl }:
+{ lib, stdenvNoCC, nodejs, fetchurl, version }:
 let
   lock = builtins.fromJSON (builtins.readFile ../package-lock.json);
   # Include only the release archives actually referenced by the lock file.
@@ -12,7 +12,7 @@ let
       && (!(pkg ? cpu) || builtins.elem (if stdenvNoCC.hostPlatform.isAarch64 then "arm64" else "x64") pkg.cpu)) lock.packages);
 in stdenvNoCC.mkDerivation {
   pname = "yonix-web";
-  version = "0.1.0";
+  inherit version;
   src = lib.fileset.toSource {
     root = ../.;
     fileset = lib.fileset.unions ([ ../package.json ../package-lock.json ../tsconfig.json ../frontend ../locales ../tests/frontend.test.mjs ../tests/frontend-dom.test.mjs ] ++ localArchives);

@@ -13,7 +13,8 @@ jobs:
   publish-x86_64:
     if: >-
       vars.CACHIX_CACHE != '' &&
-      github.event.workflow_run.event == 'push' &&
+      (github.event.workflow_run.event == 'push' ||
+        github.event.workflow_run.event == 'workflow_dispatch') &&
       github.event.workflow_run.conclusion == 'success'
     name: Build and publish x86_64 package
     runs-on: ubuntu-24.04
