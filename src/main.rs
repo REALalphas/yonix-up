@@ -393,6 +393,19 @@ fn run() -> Result<()> {
     {
         return pair_accept_command(&config, link, origin, label, &theme);
     }
+    #[cfg(feature = "gui")]
+    if matches!(command, Commands::Gui)
+        && (std::env::var_os("DISPLAY").is_some() || std::env::var_os("WAYLAND_DISPLAY").is_some())
+    {
+        let endpoint = Client::endpoint(&config, args.url.clone())?;
+        let endpoint = if let Some(file) = args.token_file.clone() {
+            endpoint.with_token(&std::fs::read_to_string(file)?)?
+        } else {
+            endpoint
+        };
+        yonix::gui::run(endpoint);
+        return Ok(());
+    }
     let client = Client::new(&config, args.url.clone(), args.token_file)?;
     match command {
         Commands::Gui => {
