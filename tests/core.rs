@@ -1,5 +1,6 @@
 use std::{fs, path::PathBuf};
 use yonix::{
+    client::Client,
     config::{Config, ConfigKind, validate_base_url},
     engine::{self, Action, Engine, plan},
 };
@@ -147,6 +148,31 @@ fn validates_config_and_rejects_typos() {
     assert!(config.validate().is_err());
     assert!(serde_json::from_str::<Config>(r#"{"config_pth":"/tmp"}"#).is_err());
 }
+
+#[test]
+fn config_load_validates_the_file_before_returning_it() {
+    let (dir, config) = fixture();
+    let path = dir.path().join("config.json");
+    fs::write(&path, serde_json::to_vec(&config).unwrap()).unwrap();
+    assert_eq!(Config::load(&path).unwrap().host, config.host);
+
+    fs::write(
+        &path,
+        serde_json::to_vec(&serde_json::json!({
+            "config_path": config.config_path,
+            "state_dir": config.state_dir,
+            "host": "bad host",
+            "source_mode": "git",
+            "port": 9847,
+            "privileged_helper": null,
+            "peers": [],
+            "cache": null,
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    assert!(Config::load(&path).is_err());
+}
 #[test]
 fn client_tokens_cannot_be_sent_to_remote_http() {
     for url in ["http://127.0.0.1:9847", "http://127.0.0.1:1234"] {
@@ -173,6 +199,22 @@ fn client_accepts_an_explicit_ipv6_loopback_url() {
     fs::write(&token_file, "a".repeat(64)).unwrap();
     yonix::client::Client::new(&config, Some("http://[::1]:9847".into()), Some(token_file))
         .expect("a numeric IPv6 loopback URL is valid for a local SSH tunnel");
+}
+
+#[test]
+fn client_validates_endpoint_and_access_tokens_before_network_use() {
+    let (_dir, config) = fixture();
+    let client = Client::endpoint(&config, None).unwrap();
+    assert!(client.with_token(&"a".repeat(64)).is_ok());
+    for token in ["", "a", &"g".repeat(64), &"a".repeat(63)] {
+        assert!(client.with_token(token).is_err(), "{token:?}");
+    }
+    for url in ["http://example.org:9847", "https://127.0.0.1:9847"] {
+        assert!(
+            Client::endpoint(&config, Some(url.into())).is_err(),
+            "{url}"
+        );
+    }
 }
 
 #[test]
@@ -541,7 +583,8 @@ fn pairing_rejects_bad_links_codes_and_paths() {
         assert!(parse_link(bad).is_err(), "{bad}");
         assert!(yonix::pairing::encode_link(&payload, bad).is_err(), "{bad}");
     }
-    // Bad payloads: version, host, path count, URL policy.
+    // Bad payloads: version and host. An empty path list is valid for a
+    // bare-code invitation and is intentionally accepted.
     let code = "482916".to_string();
     for bad in [
         PairPayload {
@@ -552,13 +595,8 @@ fn pairing_rejects_bad_links_codes_and_paths() {
             host: "nas!".into(),
             ..payload.clone()
         },
-        PairPayload {
-            paths: vec![],
-            ..payload.clone()
-        }
-        .clone(),
     ] {
-        let _ = (bad, &code);
+        assert!(yonix::pairing::encode_link(&bad, &code).is_err());
     }
     assert!(parse_link("!!!#ab").is_err());
     assert!(parse_link(&format!("{}#{}", "482916", "zz")).is_err());
@@ -609,6 +647,18 @@ fn pairing_rejects_bad_links_codes_and_paths() {
     assert!(yonix::pairing::encode_link(&many, &code).is_err());
     // Padded base64 is rejected.
     assert!(parse_link("YWJjZA==#12").is_err());
+}
+
+#[test]
+fn pairing_resolution_rechecks_numeric_paths_before_dialing() {
+    use yonix::pairing::{PathRole, resolve_checked};
+
+    assert_eq!(
+        resolve_checked("http://127.0.0.1:9847/", PathRole::Direct).unwrap(),
+        vec!["http://127.0.0.1:9847/"],
+    );
+    assert!(resolve_checked("http://10.0.0.1:9847/", PathRole::Ssh).is_err());
+    assert!(resolve_checked("http://example.invalid:9847/", PathRole::Direct).is_err());
 }
 
 #[test]
