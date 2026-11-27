@@ -93,7 +93,7 @@ nix build .#checks.x86_64-linux.peers
 
 ## Continuous Integration (CI)
 
-GitHub Actions runs `.github/workflows/ci.yml` on pushes, pull requests, and manual triggers:
+GitHub Actions runs `.github/workflows/ci.yml` on pushes to `main`, pull requests, and manual triggers:
 - **Repository Hygiene**: Runs `actionlint` to validate GitHub workflows and `gitleaks` to scan Git history for accidental secrets.
 - **Frontend**: Audits TypeScript types, bundles production assets, and verifies all 13 localization catalogs.
 - **Rust & GTK**: Runs `cargo fmt`, `clippy`, unit tests, and the headless Xvfb GTK test.

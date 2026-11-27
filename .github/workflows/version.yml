@@ -5,6 +5,10 @@ on:
     branches: [main]
   workflow_dispatch:
 
+concurrency:
+  group: version-bump-main
+  cancel-in-progress: false
+
 jobs:
   bump:
     name: Bump version

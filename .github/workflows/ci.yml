@@ -2,6 +2,7 @@ name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -75,8 +76,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}-
             ${{ runner.os }}-cargo-
-      - name: Validate GitHub Actions workflows
-        run: nix shell --inputs-from . nixpkgs#actionlint --command actionlint
       - name: Check Rust formatting
         run: nix develop --command cargo fmt --check
       - name: Lint desktop and headless targets
