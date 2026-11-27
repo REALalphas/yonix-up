@@ -1233,7 +1233,11 @@ mod tests {
             {
                 assert!(labels.iter().any(|s| s == "Собрать"));
                 assert!(labels.iter().any(|s| s == "Операций пока нет"));
-                assert!(labels.iter().any(|s| s == "v0.1.0"));
+                assert!(
+                    labels
+                        .iter()
+                        .any(|s| s == &format!("v{}", env!("CARGO_PKG_VERSION")))
+                );
                 break;
             }
             assert!(

@@ -173,6 +173,55 @@ test('a transient status error keeps the saved session and disables operations',
     assert.equal(localStorage.getItem(tokenKey), token);
 });
 
+test('an inaccessible configuration explains why configuration actions are disabled', async t => {
+    const inaccessible = {
+        ...status,
+        config_kind: 'unknown',
+        config_error: 'configuration file is unreadable',
+    };
+    mockApi(t, ({ path }) => {
+        switch (path) {
+            case 'hosts/local/status': return json(inaccessible);
+            case 'hosts/local/jobs': return json([]);
+            case 'hosts': return json([localHost]);
+            default: assert.fail('Unexpected request ' + path);
+        }
+    });
+    const view = await mount(t, createElement(App), { signedIn: true });
+    assert.equal(button(view, en.actionCheck).disabled, true);
+    assert.equal(button(view, en.actionBuild).disabled, true);
+    assert.equal(button(view, en.actionSwitch).disabled, true);
+    assert.ok(view.textContent.includes(en.configurationInaccessible));
+    assert.ok(!view.textContent.includes(en.envFlake));
+});
+
+test('maintenance actions require confirmation and submit to the selected host', async t => {
+    const requests = mockApi(t, ({ path, method }) => {
+        switch (path) {
+            case 'hosts': return json([localHost]);
+            case 'hosts/local/status': return json(status);
+            case 'hosts/local/jobs':
+                return method === 'POST'
+                    ? json({ id: 'rollback-job', action: 'rollback', status: 'running', started: 3 })
+                    : json([]);
+            case 'hosts/local/jobs/rollback-job/log': return new Response('rollback log');
+            default: assert.fail('Unexpected request ' + path);
+        }
+    });
+    const view = await mount(t, createElement(App), { signedIn: true });
+    await click(button(view, en.maintenance));
+    await click(button(view, en.actionRollback));
+    assert.ok(element(view, '[role="alert"]').textContent.includes(en.confirmRollback));
+    await click(button(view, en.cancel));
+    assert.equal(requests.filter(request => request.method === 'POST').length, 0);
+
+    await click(button(view, en.actionRollback));
+    await click(button(view, en.continue));
+    assert.deepEqual(requests.filter(request => request.method === 'POST').map(({ path, body }) => ({ path, body })), [
+        { path: 'hosts/local/jobs', body: { action: 'rollback', confirmed: true } },
+    ]);
+});
+
 test('confirmation targets the selected host and successful submission opens its text log', async t => {
     const job = { id: 'remote-job', action: 'switch', status: 'running', started: 1 };
     let jobStarted = false;
