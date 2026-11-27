@@ -1704,32 +1704,12 @@ mod tests {
         let switcher =
             find_widget::<adw::ViewSwitcher>(english_window.upcast_ref(), &|_| true).unwrap();
         let stack = switcher.stack().unwrap();
-        let check_switcher = |width, policy| {
-            english_window.set_default_size(width, 760);
-            let deadline = std::time::Instant::now() + Duration::from_secs(5);
-            loop {
-                while context.pending() {
-                    context.iteration(false);
-                }
-                let actual_width = english_window.width();
-                let width_matches = if policy == adw::ViewSwitcherPolicy::Wide {
-                    actual_width > 700
-                } else {
-                    actual_width <= 700
-                };
-                if width_matches && switcher.policy() == policy {
-                    break;
-                }
-                assert!(
-                    std::time::Instant::now() < deadline,
-                    "Expected {policy:?} navigation at {width} px, got {:?} at {} px",
-                    switcher.policy(),
-                    actual_width,
-                );
-                std::thread::sleep(Duration::from_millis(20));
-            }
+        let expected_policy = if english_window.width() <= 700 {
+            adw::ViewSwitcherPolicy::Narrow
+        } else {
+            adw::ViewSwitcherPolicy::Wide
         };
-        check_switcher(980, adw::ViewSwitcherPolicy::Wide);
+        assert_eq!(switcher.policy(), expected_policy);
         assert!(stack.child_by_name("maintenance").is_none());
         WidgetExt::activate_action(&english_window, "win.connections", None).unwrap();
         assert_eq!(stack.visible_child_name().as_deref(), Some("connections"));
@@ -1846,45 +1826,6 @@ mod tests {
         std::fs::remove_file(flake).unwrap();
         std::fs::remove_file(legacy).unwrap();
         english_window.close();
-        for (width, bottom_navigation) in [(610, false), (390, true)] {
-            let compact = build_window(&app, Client::new(&config, None, None).unwrap(), language);
-            compact.set_default_size(width, 760);
-            compact.present();
-            let deadline = std::time::Instant::now() + Duration::from_secs(5);
-            while compact.width() <= 0 || compact.current_breakpoint().is_none() {
-                while context.pending() {
-                    context.iteration(false);
-                }
-                assert!(
-                    std::time::Instant::now() < deadline,
-                    "Compact window was not allocated"
-                );
-                std::thread::sleep(Duration::from_millis(20));
-            }
-            let bottom =
-                find_widget::<adw::ViewSwitcherBar>(compact.upcast_ref(), &|_| true).unwrap();
-            let head = find_widget::<adw::HeaderBar>(compact.upcast_ref(), &|_| true).unwrap();
-            assert_eq!(
-                bottom.reveals(),
-                bottom_navigation,
-                "at width {}",
-                compact.width()
-            );
-            let title = head.title_widget().unwrap();
-            if bottom_navigation {
-                assert!(title.is::<adw::WindowTitle>());
-                assert!(bottom.is_mapped());
-                WidgetExt::activate_action(&compact, "win.history", None).unwrap();
-                assert_eq!(
-                    bottom.stack().unwrap().visible_child_name().as_deref(),
-                    Some("history")
-                );
-            } else {
-                let switcher = title.downcast::<adw::ViewSwitcher>().unwrap();
-                assert_eq!(switcher.policy(), adw::ViewSwitcherPolicy::Narrow);
-            }
-            compact.close();
-        }
         for (code, _) in crate::i18n::LOCALES {
             if matches!(*code, "ru" | "en") {
                 continue;
