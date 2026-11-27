@@ -132,5 +132,8 @@
     "pairingDisabled": "Pairing is disabled",
     "pairingExpires": "Code expires in",
     "pairingExpired": "This pairing code expired. Start a new invitation.",
-    "version": "Sürüm"
+    "version": "Sürüm",
+    "menu": "Menü",
+    "settings": "Ayarlar",
+    "shortcuts": "Kısayollar"
 }

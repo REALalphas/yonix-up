@@ -132,5 +132,8 @@
     "pairingDisabled": "Pairing is disabled",
     "pairingExpires": "Code expires in",
     "pairingExpired": "This pairing code expired. Start a new invitation.",
-    "version": "Version"
+    "version": "Version",
+    "menu": "Menu",
+    "settings": "Paramètres",
+    "shortcuts": "Raccourcis"
 }

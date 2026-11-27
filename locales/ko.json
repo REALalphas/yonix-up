@@ -132,5 +132,8 @@
     "pairingDisabled": "Pairing is disabled",
     "pairingExpires": "Code expires in",
     "pairingExpired": "This pairing code expired. Start a new invitation.",
-    "version": "버전"
+    "version": "버전",
+    "menu": "메뉴",
+    "settings": "설정",
+    "shortcuts": "단축키"
 }
