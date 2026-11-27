@@ -83,6 +83,17 @@ fn inputs_update_does_not_apply() {
         ]
     );
 }
+
+#[test]
+fn path_mode_updates_inputs_without_git_repository_checks() {
+    let (_dir, mut config) = fixture();
+    config.source_mode = "path".into();
+    let steps = plan(&config, Action::UpdateInputs).unwrap();
+    assert_eq!(
+        steps[0].args.last().unwrap(),
+        &format!("path:{}", config.config_path.display())
+    );
+}
 #[test]
 fn flake_diff_builds_and_compares_the_state_result_link() {
     let (_dir, mut config) = fixture();
