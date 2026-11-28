@@ -397,13 +397,19 @@ fn run() -> Result<()> {
     if matches!(command, Commands::Gui)
         && (std::env::var_os("DISPLAY").is_some() || std::env::var_os("WAYLAND_DISPLAY").is_some())
     {
-        let endpoint = Client::endpoint(&config, args.url.clone())?;
-        let endpoint = if let Some(file) = args.token_file.clone() {
-            endpoint.with_token(&std::fs::read_to_string(file)?)?
+        let client = if args.url.is_none() && args.token_file.is_none() {
+            // The desktop client on the local machine can authenticate with
+            // the token owned by the local Yonix service without prompting.
+            Client::new(&config, None, None).or_else(|_| Client::endpoint(&config, None))?
         } else {
-            endpoint
+            let endpoint = Client::endpoint(&config, args.url.clone())?;
+            if let Some(file) = args.token_file.clone() {
+                endpoint.with_token(&std::fs::read_to_string(file)?)?
+            } else {
+                endpoint
+            }
         };
-        yonix::gui::run(endpoint);
+        yonix::gui::run(client);
         return Ok(());
     }
     let client = Client::new(&config, args.url.clone(), args.token_file)?;

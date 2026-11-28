@@ -132,5 +132,8 @@
     "pairingDisabled": "Pairing is disabled",
     "pairingExpires": "Code expires in",
     "pairingExpired": "This pairing code expired. Start a new invitation.",
-    "version": "版本"
+    "version": "版本",
+    "menu": "菜单",
+    "settings": "设置",
+    "shortcuts": "快捷键"
 }
