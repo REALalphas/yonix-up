@@ -2,7 +2,7 @@
 
 Changes are grouped by release. Until a tagged release is published, entries below describe the development version and do not imply a compatibility guarantee.
 
-## Unreleased — 0.1.3 development
+## Unreleased — 0.1.4 development
 
 - Rust CLI, native GTK 4/libadwaita application and React browser panel sharing an operation service.
 - NixOS module, desktop and headless packages, with flake and legacy configuration support.
